@@ -1,0 +1,3 @@
+"NSLocationWhenInUseUsageDescription" = "Street Print uses your location to record the routes you travel and show them on your map.";
+"NSLocationAlwaysAndWhenInUseUsageDescription" = "Allow Always access to automatically record your routes while the app is in the background or closed.";
+"NSMotionUsageDescription" = "Motion data helps Street Print estimate whether you are walking, cycling, or driving.";
