@@ -126,9 +126,8 @@ struct WalkTrack: Codable, Identifiable, Hashable {
     }
 
     var distance: CLLocationDistance {
-        zip(displayPoints, displayPoints.dropFirst()).reduce(0) { partial, pair in
-            partial + pair.0.location.distance(from: pair.1.location)
-        }
+        RecordedDistanceCalculator.legs(from: rawPoints, isEstimatedTrack: isEstimated == true)
+            .reduce(0) { $0 + $1.distance }
     }
 }
 
@@ -142,6 +141,7 @@ enum PeriodPreset: String, CaseIterable, Identifiable {
 
 enum MapDisplayMode: String, CaseIterable {
     case map
+    case excavation
     case routesOnly
 }
 

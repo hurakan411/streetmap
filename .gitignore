@@ -3,3 +3,16 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 .DS_Store
+*.xcarchive/
+*.ipa
+*.dSYM/
+*.p12
+*.p8
+*.pem
+*.mobileprovision
+walk-history.json
+active-route.json
+recovery-anchor.json
+*-update-history.json
+Michi 2.xcodeproj/
+Michi/Resources/Info 2.plist

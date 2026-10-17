@@ -7,6 +7,11 @@
 "今月" = "This month";
 "今年" = "This year";
 "全て" = "All time";
+"開始日" = "Start date";
+"終了日" = "End date";
+"開始日を選択" = "Choose start date";
+"終了日を選択" = "Choose end date";
+"完了" = "Done";
 "新しい道" = "New roads";
 "移動距離" = "Distance";
 "歩行距離" = "Distance";
@@ -48,6 +53,13 @@
 "濃紺 + エレクトリックシアン" = "Midnight navy + electric cyan";
 "地図のスタイル" = "Map style";
 "色、線、地図の空気感" = "Color, line, and map mood";
+"お店・施設を表示" = "Show shops and places";
+"Appleマップのお店、駅、施設名を表示します" = "Show shops, stations, and place names from Apple Maps";
+"詳細情報を読み込み中" = "Loading place details";
+"閉じる" = "Close";
+"電話" = "Call";
+"Webサイト" = "Website";
+"紙の地図" = "Paper map";
 "記録モード" = "Recording mode";
 "アプリを閉じたあとの動作" = "What happens after closing the app";
 "記録する移動" = "Transport to record";

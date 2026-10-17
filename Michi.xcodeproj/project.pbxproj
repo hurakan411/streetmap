@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D157A6CE10C74D81B0030001 /* RecordedDistanceCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */; };
+		B43D45169C6C4B629742F101 /* MidnightHexMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = B43D45169C6C4B629742F102 /* MidnightHexMask.swift */; };
+		E26B12014AA34DB7A1426031 /* TornPaperRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */; };
 		053069730E7147EC112CEDAD /* RoadMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADC4594EECFBB077240122D /* RoadMatchingService.swift */; };
 		0849F113BD5801BA1C66BACB /* WalkModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0DC77CBA103B5BB2A77F6FB /* WalkModels.swift */; };
 		1378D5822696C6D47ECD95DF /* ShareCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1558F3304C6E314674A94D4D /* ShareCardView.swift */; };
@@ -26,6 +29,9 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordedDistanceCalculator.swift; sourceTree = "<group>"; };
+		B43D45169C6C4B629742F102 /* MidnightHexMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MidnightHexMask.swift; sourceTree = "<group>"; };
+		E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TornPaperRenderer.swift; sourceTree = "<group>"; };
 		0BE591074EC6CA0CDF4AFB33 /* MapCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCanvasView.swift; sourceTree = "<group>"; };
 		1558F3304C6E314674A94D4D /* ShareCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardView.swift; sourceTree = "<group>"; };
 		1EB999A739A94D0E9CD6CECD /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
@@ -49,6 +55,7 @@
 		15310CCC90C2637EFD2D30EA /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */,
 				657069DB8E673765FECCC9B4 /* LocalHistoryStore.swift */,
 				FCD39B53E0F7E12B7E765318 /* LocationRecorder.swift */,
 				CADC4594EECFBB077240122D /* RoadMatchingService.swift */,
@@ -75,6 +82,8 @@
 		62DABDCA1B7BBDE3D98824B8 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				B43D45169C6C4B629742F102 /* MidnightHexMask.swift */,
+				E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */,
 				3578FE2AA6ADFA62E1E793A6 /* MainMapView.swift */,
 				0BE591074EC6CA0CDF4AFB33 /* MapCanvasView.swift */,
 				3964AEF41C1BE838A3278400 /* OnboardingView.swift */,
@@ -207,6 +216,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D157A6CE10C74D81B0030001 /* RecordedDistanceCalculator.swift in Sources */,
+				B43D45169C6C4B629742F101 /* MidnightHexMask.swift in Sources */,
+				E26B12014AA34DB7A1426031 /* TornPaperRenderer.swift in Sources */,
 				B33F567C4B15E3096BA96BEE /* AppStore.swift in Sources */,
 				D1E84D8B43E1B4FF9D62FC71 /* LocalHistoryStore.swift in Sources */,
 				1AA079CCE2FE5590DC70F977 /* LocationRecorder.swift in Sources */,

@@ -14,17 +14,29 @@ struct RemixViewportSnapshot: Equatable {
     let viewportAspectRatio: CGFloat
 }
 
+struct MapPlaceDetails: Identifiable {
+    let id: String
+    let name: String
+    let address: String?
+    let phoneNumber: String?
+    let website: URL?
+    let coordinate: CLLocationCoordinate2D
+    let isLoading: Bool
+}
+
 struct MapCanvasView: UIViewRepresentable {
     let segments: [WeightedSegment]
     let livePoints: [GeoPoint]
     let stats: WalkStats
     let visibleTransportModes: Set<TransportMode>
+    let showsPointsOfInterest: Bool
     let mode: MapDisplayMode
     let theme: AppTheme
     let recenterToken: Int
     let targetLocation: CLLocation?
     let reservesBottomControlsSpace: Bool
     let onMapTap: () -> Void
+    let onPlaceSelected: (MapPlaceDetails?) -> Void
     let onAnimatedStatsChanged: (WalkStats) -> Void
     let onRemixSnapshotChanged: (RemixViewportSnapshot?) -> Void
     let mapSnapshotRequestToken: Int
@@ -33,6 +45,7 @@ struct MapCanvasView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onMapTap: onMapTap,
+            onPlaceSelected: onPlaceSelected,
             onAnimatedStatsChanged: onAnimatedStatsChanged,
             onRemixSnapshotChanged: onRemixSnapshotChanged,
             onMapSnapshotReady: onMapSnapshotReady
@@ -46,7 +59,8 @@ struct MapCanvasView: UIViewRepresentable {
         mapView.showsScale = false
         mapView.showsUserLocation = true
         mapView.isRotateEnabled = true
-        mapView.pointOfInterestFilter = .excludingAll
+        mapView.pointOfInterestFilter = showsPointsOfInterest ? .includingAll : .excludingAll
+        mapView.selectableMapFeatures = showsPointsOfInterest ? [.pointsOfInterest] : []
         mapView.layoutMargins = attributionLayoutMargins
         let tapRecognizer = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.didTapMap))
         tapRecognizer.cancelsTouchesInView = false
@@ -69,11 +83,13 @@ struct MapCanvasView: UIViewRepresentable {
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
         context.coordinator.onMapTap = onMapTap
+        context.coordinator.onPlaceSelected = onPlaceSelected
         context.coordinator.onAnimatedStatsChanged = onAnimatedStatsChanged
         context.coordinator.onRemixSnapshotChanged = onRemixSnapshotChanged
         context.coordinator.onMapSnapshotReady = onMapSnapshotReady
         context.coordinator.theme = theme
-        configureMap(mapView)
+        if theme == .midnightPulse { MidnightHexArtwork.prewarm() }
+        configureMap(mapView, showsPointsOfInterest: showsPointsOfInterest)
         (mapView as? MichiMapView)?.setRouteOnlyAttributionCover(
             visible: mode == .routesOnly,
             color: UIColor(theme.backgroundColor)
@@ -177,6 +193,13 @@ struct MapCanvasView: UIViewRepresentable {
             visibleTransportModes: visibleTransportModes,
             on: mapView
         )
+        context.coordinator.updateExcavationMask(
+            mode: mode,
+            segments: segments,
+            livePoints: livePoints,
+            visibleTransportModes: visibleTransportModes,
+            on: mapView
+        )
         if mode == .routesOnly, context.coordinator.remixOverlay == nil {
             context.coordinator.publishPlainViewportSnapshotIfPossible(on: mapView)
         }
@@ -200,10 +223,13 @@ struct MapCanvasView: UIViewRepresentable {
         }
     }
 
-    private func configureMap(_ mapView: MKMapView) {
+    private func configureMap(_ mapView: MKMapView, showsPointsOfInterest: Bool) {
         mapView.overrideUserInterfaceStyle = theme.prefersDarkMap ? .dark : .light
         let configuration = MKStandardMapConfiguration(elevationStyle: .flat, emphasisStyle: .muted)
-        configuration.pointOfInterestFilter = .excludingAll
+        let pointOfInterestFilter: MKPointOfInterestFilter = showsPointsOfInterest ? .includingAll : .excludingAll
+        mapView.pointOfInterestFilter = pointOfInterestFilter
+        mapView.selectableMapFeatures = showsPointsOfInterest ? [.pointsOfInterest] : []
+        configuration.pointOfInterestFilter = pointOfInterestFilter
         configuration.showsTraffic = false
         mapView.preferredConfiguration = configuration
         mapView.backgroundColor = UIColor(theme.backgroundColor)
@@ -258,6 +284,7 @@ struct MapCanvasView: UIViewRepresentable {
         var hasCenteredOnUser = false
         var shouldRecenterOnNextLocation = false
         var onMapTap: () -> Void
+        var onPlaceSelected: (MapPlaceDetails?) -> Void
         var onAnimatedStatsChanged: (WalkStats) -> Void
         var onRemixSnapshotChanged: (RemixViewportSnapshot?) -> Void
         var onMapSnapshotReady: (UIImage?) -> Void
@@ -286,30 +313,118 @@ struct MapCanvasView: UIViewRepresentable {
         var latestDataSignature = 0
         var latestTheme: AppTheme = .editorialGlass
         var mapSnapshotRequestToken = 0
+        private var excavationMask: ExcavationMaskTileOverlay?
+        private var excavationMaskSignature: Int?
+        private var shouldSuppressMapTap = false
+        private var selectedPlaceRequestToken = UUID()
 
         init(
             onMapTap: @escaping () -> Void,
+            onPlaceSelected: @escaping (MapPlaceDetails?) -> Void,
             onAnimatedStatsChanged: @escaping (WalkStats) -> Void,
             onRemixSnapshotChanged: @escaping (RemixViewportSnapshot?) -> Void,
             onMapSnapshotReady: @escaping (UIImage?) -> Void
         ) {
             self.onMapTap = onMapTap
+            self.onPlaceSelected = onPlaceSelected
             self.onAnimatedStatsChanged = onAnimatedStatsChanged
             self.onRemixSnapshotChanged = onRemixSnapshotChanged
             self.onMapSnapshotReady = onMapSnapshotReady
         }
 
         @objc func didTapMap() {
-            onMapTap()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if shouldSuppressMapTap {
+                    shouldSuppressMapTap = false
+                } else {
+                    onMapTap()
+                }
+            }
+        }
+
+        func mapView(_ mapView: MKMapView, didSelect annotation: any MKAnnotation) {
+            guard let feature = annotation as? MKMapFeatureAnnotation,
+                  feature.featureType == .pointOfInterest else { return }
+
+            let isRevealed = (mapView as? MichiMapView)?.midnightHexMask?.contains(feature.coordinate)
+                ?? excavationMask?.contains(feature.coordinate) ?? false
+            if displayMode == .excavation, !isRevealed {
+                mapView.deselectAnnotation(annotation, animated: false)
+                return
+            }
+
+            shouldSuppressMapTap = true
+            // POI選択と同じタップが地図用ジェスチャーにも届く場合だけ抑止する。
+            // MapKitが地図タップを発火しないケースでも、次回の背景タップを誤って無視しない。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.shouldSuppressMapTap = false
+            }
+            let requestToken = UUID()
+            selectedPlaceRequestToken = requestToken
+            let coordinate = feature.coordinate
+            let title = feature.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallbackName = (title?.isEmpty == false ? title : nil) ?? NSLocalizedString("場所", comment: "Selected map place")
+            let featureID = "\(fallbackName)|\(coordinate.latitude)|\(coordinate.longitude)"
+            onPlaceSelected(MapPlaceDetails(
+                id: featureID,
+                name: fallbackName,
+                address: feature.subtitle,
+                phoneNumber: nil,
+                website: nil,
+                coordinate: coordinate,
+                isLoading: true
+            ))
+
+            let request = MKMapItemRequest(mapFeatureAnnotation: feature)
+            request.getMapItem { [weak self] item, _ in
+                DispatchQueue.main.async {
+                    guard let self, self.selectedPlaceRequestToken == requestToken else { return }
+                    guard let item else {
+                        self.onPlaceSelected(MapPlaceDetails(
+                            id: featureID,
+                            name: fallbackName,
+                            address: feature.subtitle,
+                            phoneNumber: nil,
+                            website: nil,
+                            coordinate: coordinate,
+                            isLoading: false
+                        ))
+                        return
+                    }
+                    let mapItemName = item.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let name = (mapItemName?.isEmpty == false ? mapItemName : nil) ?? fallbackName
+                    let placemarkTitle = item.placemark.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let address = (placemarkTitle?.isEmpty == false && placemarkTitle != name)
+                        ? placemarkTitle
+                        : feature.subtitle
+                    self.onPlaceSelected(MapPlaceDetails(
+                        id: featureID,
+                        name: name,
+                        address: address,
+                        phoneNumber: item.phoneNumber,
+                        website: item.url,
+                        coordinate: item.placemark.coordinate,
+                        isLoading: false
+                    ))
+                }
+            }
+        }
+
+        func mapView(_ mapView: MKMapView, didDeselect annotation: any MKAnnotation) {
+            guard annotation is MKMapFeatureAnnotation else { return }
+            selectedPlaceRequestToken = UUID()
+            onPlaceSelected(nil)
         }
 
         func captureMapSnapshot(on mapView: MKMapView) {
-            guard displayMode == .map, mapView.bounds.width > 1, mapView.bounds.height > 1 else {
+            guard displayMode != .routesOnly, mapView.bounds.width > 1, mapView.bounds.height > 1 else {
                 DispatchQueue.main.async { [onMapSnapshotReady] in
                     onMapSnapshotReady(nil)
                 }
                 return
             }
+            (mapView as? MichiMapView)?.midnightHexMask?.finishEntryAnimation()
             let originalMargins = mapView.layoutMargins
             // 共有画像では、UIを消した状態と同じ最下部へ帰属表示を置く。
             mapView.layoutMargins = UIEdgeInsets(top: 7, left: 0, bottom: 4, right: 7)
@@ -354,11 +469,23 @@ struct MapCanvasView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            updateExcavationScale(on: mapView, settled: true)
             if remixOverlay == nil {
                 publishPlainViewportSnapshotIfPossible(on: mapView)
             } else {
                 publishRemixSnapshotIfPossible(on: mapView)
             }
+        }
+
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            updateExcavationScale(on: mapView)
+        }
+
+        private func updateExcavationScale(on mapView: MKMapView, settled: Bool = false) {
+            guard mapView.visibleMapRect.width > 0 else { return }
+            (mapView as? MichiMapView)?.midnightHexMask?.refreshViewport()
+            excavationMask?.updateViewport(mapView.visibleMapRect,
+                zoomScale: Double(mapView.bounds.width) / mapView.visibleMapRect.width, settled: settled)
         }
 
         // MapKitの標準ユーザー位置ビューは、精度サークル（白い輪）を
@@ -458,8 +585,13 @@ struct MapCanvasView: UIViewRepresentable {
             let oldOverlays = mapView.overlays.filter {
                 $0 is FrequencyPolyline || $0 is LivePolyline || $0 is RouteRemixOverlay
                     || $0 is BackgroundTileOverlay || $0 is MapTintOverlay
+                    || $0 is ExcavationMaskTileOverlay
             }
             if !oldOverlays.isEmpty { mapView.removeOverlays(oldOverlays) }
+            (mapView as? MichiMapView)?.setMidnightHexSurface(nil)
+            excavationMask?.invalidate()
+            excavationMask = nil
+            excavationMaskSignature = nil
 
             let viewport = mapView.visibleMapRect
             let remixedSegments = makeRemixedSegments(from: sources, inside: viewport)
@@ -498,8 +630,8 @@ struct MapCanvasView: UIViewRepresentable {
                 onRemixSnapshotChanged(nil)
             }
             startRemixAnimation(from: overlay.progress, to: 0, on: mapView) { [weak self, weak mapView] in
-                guard let self, let mapView, self.displayMode == .map else { return }
-                self.restoreNormalRoutes(mode: .map, on: mapView)
+                guard let self, let mapView, self.displayMode != .routesOnly else { return }
+                self.restoreNormalRoutes(mode: self.displayMode, on: mapView)
             }
         }
 
@@ -509,6 +641,7 @@ struct MapCanvasView: UIViewRepresentable {
             stopRemixAnimation()
             let backgroundOverlays = mapView.overlays.filter {
                 $0 is RouteRemixOverlay || $0 is BackgroundTileOverlay || $0 is MapTintOverlay
+                    || $0 is ExcavationMaskTileOverlay
             }
             if !backgroundOverlays.isEmpty {
                 mapView.removeOverlays(backgroundOverlays)
@@ -516,11 +649,15 @@ struct MapCanvasView: UIViewRepresentable {
             remixOverlay = nil
             remixBackground = nil
             remixMapView = nil
+            (mapView as? MichiMapView)?.setMidnightHexSurface(nil)
+            excavationMask?.invalidate()
+            excavationMask = nil
+            excavationMaskSignature = nil
             lastPublishedRemixSnapshot = nil
             DispatchQueue.main.async { [onRemixSnapshotChanged] in
                 onRemixSnapshotChanged(nil)
             }
-            mapView.showsUserLocation = mode == .map
+            mapView.showsUserLocation = mode != .routesOnly
             updateBackground(mode: mode, theme: latestTheme, on: mapView)
         }
 
@@ -610,12 +747,17 @@ struct MapCanvasView: UIViewRepresentable {
             let disposable = mapView.overlays.filter {
                 $0 is RouteRemixOverlay || $0 is FrequencyPolyline || $0 is LivePolyline
                     || $0 is BackgroundTileOverlay || $0 is MapTintOverlay
+                    || $0 is ExcavationMaskTileOverlay
             }
             if !disposable.isEmpty { mapView.removeOverlays(disposable) }
             remixOverlay = nil
             remixBackground = nil
             remixMapView = nil
-            mapView.showsUserLocation = mode == .map
+            (mapView as? MichiMapView)?.setMidnightHexSurface(nil)
+            excavationMask?.invalidate()
+            excavationMask = nil
+            excavationMaskSignature = nil
+            mapView.showsUserLocation = mode != .routesOnly
 
             theme = latestTheme
             updateBackground(mode: mode, theme: latestTheme, on: mapView)
@@ -905,6 +1047,77 @@ struct MapCanvasView: UIViewRepresentable {
             routeBackgroundSignature = backgroundSignature(mode: mode, theme: theme)
         }
 
+        func updateExcavationMask(
+            mode: MapDisplayMode,
+            segments: [WeightedSegment],
+            livePoints: [GeoPoint],
+            visibleTransportModes: Set<TransportMode>,
+            on mapView: MKMapView
+        ) {
+            guard mode == .excavation else {
+                (mapView as? MichiMapView)?.setMidnightHexSurface(nil)
+                if let excavationMask {
+                    excavationMask.invalidate()
+                    mapView.removeOverlay(excavationMask)
+                    self.excavationMask = nil
+                }
+                excavationMaskSignature = nil
+                return
+            }
+
+            var hasher = Hasher()
+            hasher.combine(latestDataSignature)
+            hasher.combine(theme.rawValue)
+            for (start, end) in zip(livePoints, livePoints.dropFirst())
+                where visibleTransportModes.contains(end.resolvedTransportMode) {
+                hasher.combine(start.id)
+                hasher.combine(end.id)
+            }
+            let signature = hasher.finalize()
+            guard signature != excavationMaskSignature else { return }
+            excavationMaskSignature = signature
+
+            var maskSegments = segments.filter { visibleTransportModes.contains($0.transportMode) }.map {
+                ExcavationMaskTileOverlay.Segment(start: MKMapPoint($0.start), end: MKMapPoint($0.end))
+            }
+            for (start, end) in zip(livePoints, livePoints.dropFirst())
+                where visibleTransportModes.contains(end.resolvedTransportMode) {
+                maskSegments.append(.init(start: MKMapPoint(start.coordinate), end: MKMapPoint(end.coordinate)))
+            }
+
+            // Only entering this mode animates the captured screen. Subsequent
+            // route/filter updates reuse the same geographic cells immediately.
+            if theme == .midnightPulse, let excavationMask, let hex = excavationMask.hexSurface {
+                hex.update(segments: maskSegments)
+                excavationMask.updateViewport(mapView.visibleMapRect,
+                    zoomScale: Double(mapView.bounds.width) / max(1, mapView.visibleMapRect.width))
+                return
+            }
+            if let excavationMask {
+                excavationMask.invalidate()
+                mapView.removeOverlay(excavationMask)
+            }
+            (mapView as? MichiMapView)?.setMidnightHexSurface(nil)
+            let overlay = ExcavationMaskTileOverlay(
+                segments: maskSegments, darkPaper: theme.prefersDarkMap
+            )
+            overlay.updateViewport(mapView.visibleMapRect,
+                zoomScale: Double(mapView.bounds.width) / max(1, mapView.visibleMapRect.width))
+            excavationMask = overlay
+            if let hex = overlay.hexSurface {
+                (mapView as? MichiMapView)?.setMidnightHexSurface(hex)
+                return
+            }
+            let overlays = mapView.overlays
+            let routeIndex = overlays.firstIndex(where: { candidate in
+                if let line = candidate as? FrequencyPolyline {
+                    return !line.isGlowLayer
+                }
+                return candidate is LivePolyline
+            }) ?? overlays.count
+            mapView.insertOverlay(overlay, at: routeIndex, level: .aboveLabels)
+        }
+
         func updateRoutesIncrementally(
             segments: [WeightedSegment],
             dataSignature: Int,
@@ -1169,6 +1382,9 @@ struct MapCanvasView: UIViewRepresentable {
             if let tint = overlay as? MapTintOverlay {
                 return MapTintRenderer(overlay: tint, color: tint.color)
             }
+            if let excavation = overlay as? ExcavationMaskTileOverlay {
+                return ExcavationMaskRenderer(paperOverlay: excavation)
+            }
             if let remix = overlay as? RouteRemixOverlay {
                 return RouteRemixOverlayRenderer(overlay: remix)
             }
@@ -1232,6 +1448,24 @@ private final class MichiUserLocationView: MKAnnotationView {
 private final class MichiMapView: MKMapView {
     private let routeOnlyAttributionCover = UIView()
     private var showsRouteOnlyAttributionCover = false
+    private(set) var midnightHexMask: MidnightHexMaskView?
+
+    func setMidnightHexSurface(_ surface: MidnightHexSurface?) {
+        if let surface, let midnightHexMask, midnightHexMask.surface === surface {
+            midnightHexMask.refreshViewport()
+            return
+        }
+        midnightHexMask?.finishEntryAnimation()
+        midnightHexMask?.removeFromSuperview()
+        midnightHexMask = nil
+        guard let surface else { return }
+        let cover = MidnightHexMaskView(surface: surface, mapView: self)
+        midnightHexMask = cover
+        // Above the map content, below MapKit's native controls/attribution.
+        // SwiftUI's existing app controls remain above the whole map view.
+        insertSubview(cover, at: min(1, subviews.count))
+        cover.refreshViewport()
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1262,6 +1496,8 @@ private final class MichiMapView: MKMapView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        midnightHexMask?.frame = bounds
+        midnightHexMask?.refreshViewport()
         if showsRouteOnlyAttributionCover {
             bringSubviewToFront(routeOnlyAttributionCover)
         }
@@ -1458,6 +1694,122 @@ private final class BackgroundTileOverlay: MKTileOverlay {
 
     override func loadTile(at path: MKTileOverlayPath, result: @escaping (Data?, (any Error)?) -> Void) {
         result(tileData, nil)
+    }
+}
+
+/// Theme-specific cover, revealing the Apple map near travelled streets.
+/// Both covers follow the map; Midnight uses a lightweight projected layer canvas.
+private final class ExcavationMaskTileOverlay: NSObject, MKOverlay {
+    typealias Segment = TornPaperRenderer.Segment
+    private static let sharedMaterial: PaperMaterial? = {
+        guard let image = UIImage(named: "TornPaperSurface")?.cgImage else { return nil }
+        return PaperMaterial(image: image)
+    }()
+    private static let sharedEdgeMaterial: PaperEdgeMaterial? = {
+        guard let image = UIImage(named: "TornPaperFineEdge")?.cgImage else { return nil }
+        return PaperEdgeMaterial(image: image)
+    }()
+    let coordinate = CLLocationCoordinate2D(latitude: 0, longitude: 0)
+    let boundingMapRect = MKMapRect.world
+    let pipeline: PaperTilePipeline?
+    let hexSurface: MidnightHexSurface?
+    let paperColor: CGColor
+    private let paper: TornPaperRenderer?
+
+    init(segments: [Segment], darkPaper: Bool) {
+        if darkPaper {
+            hexSurface = MidnightHexSurface(segments: segments)
+            paper = nil
+            pipeline = nil
+        } else {
+            hexSurface = nil
+            let edge = Self.sharedEdgeMaterial
+            let paper = TornPaperRenderer(segments: segments, darkPaper: false,
+                material: edge == nil ? Self.sharedMaterial : nil, edgeMaterial: edge,
+                segmentIndex: PaperSegmentIndex(segments: segments))
+            self.paper = paper
+            pipeline = PaperTilePipeline(paper: paper, scale: UIScreen.main.scale)
+        }
+        paperColor = darkPaper ? UIColor(red: 0.060, green: 0.079, blue: 0.112, alpha: 1).cgColor
+            : UIColor(red: 205 / 255, green: 201 / 255, blue: 194 / 255, alpha: 1).cgColor
+        super.init()
+    }
+
+    func invalidate() { pipeline?.invalidate(); hexSurface?.invalidate() }
+    func updateViewport(_ rect: MKMapRect, zoomScale: Double, settled: Bool = false) {
+        guard zoomScale.isFinite, zoomScale > 0 else { return }
+        pipeline?.updateViewport(rect, zoomScale: zoomScale)
+    }
+    func contains(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        paper?.contains(coordinate) ?? false
+    }
+}
+
+/// Draw cached native images immediately. MapKit moves this overlay with the
+/// map; missing zoom levels reuse geographically aligned parents/children
+/// while progressive jobs refine them, rather than exposing an empty tile.
+private final class ExcavationMaskRenderer: MKOverlayRenderer {
+    private let paperOverlay: ExcavationMaskTileOverlay
+
+    init(paperOverlay: ExcavationMaskTileOverlay) {
+        self.paperOverlay = paperOverlay
+        super.init(overlay: paperOverlay)
+        paperOverlay.pipeline?.setCallback { [weak self] rect in
+            DispatchQueue.main.async { [weak self] in self?.setNeedsDisplay(rect) }
+        }
+    }
+
+    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
+        guard let pipeline = paperOverlay.pipeline else { return }
+        let level = PaperTileKey.level(zoomScale: zoomScale)
+        context.saveGState()
+        context.clip(to: rect(for: mapRect))
+        context.interpolationQuality = .medium
+        for key in PaperTileKey.covering(mapRect, level: level) {
+            pipeline.request(key)
+            let target = rect(for: key.rect)
+            if let image = pipeline.image(for: key) {
+                draw(image, in: target, context: context)
+                continue
+            }
+            var ancestor = key, fallback: CGImage?
+            for _ in 0..<min(3, key.z) {
+                ancestor = ancestor.parent
+                if let image = pipeline.image(for: ancestor) {
+                    let divisions = 1 << (key.z - ancestor.z)
+                    let side = Double(image.width) / Double(divisions)
+                    fallback = image.cropping(to: CGRect(x: Double(key.x % divisions) * side,
+                        y: Double(key.y % divisions) * side, width: side, height: side))
+                    if fallback != nil { break }
+                }
+            }
+            if let fallback {
+                draw(fallback, in: target, context: context)
+            } else {
+                context.setFillColor(paperOverlay.paperColor)
+                context.fill(target)
+                drawCachedChildren(of: key, depth: 2, context: context)
+            }
+        }
+        context.restoreGState()
+    }
+
+    private func drawCachedChildren(of key: PaperTileKey, depth: Int, context: CGContext) {
+        guard depth > 0, key.z < 22 else { return }
+        for y in 0..<2 { for x in 0..<2 {
+            let child = PaperTileKey(x: key.x * 2 + x, y: key.y * 2 + y, z: key.z + 1)
+            if let image = paperOverlay.pipeline?.image(for: child) {
+                draw(image, in: rect(for: child.rect), context: context)
+            } else { drawCachedChildren(of: child, depth: depth - 1, context: context) }
+        }}
+    }
+
+    private func draw(_ image: CGImage, in rect: CGRect, context: CGContext) {
+        context.saveGState()
+        context.translateBy(x: rect.minX, y: rect.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: CGRect(origin: .zero, size: rect.size))
+        context.restoreGState()
     }
 }
 

@@ -58,6 +58,26 @@ struct SettingsView: View {
                             .padding(.vertical, 3)
                         }
 
+                        Toggle(isOn: $store.showsPointsOfInterest) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .foregroundStyle(store.theme.interactionColor)
+                                    .frame(width: 24)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("お店・施設を表示")
+                                        .font(.system(size: 15, weight: .medium))
+                                    Text("Appleマップのお店、駅、施設名を表示します")
+                                        .font(.system(size: 12, weight: .regular))
+                                        .foregroundStyle(store.theme.foregroundColor.opacity(0.52))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        .tint(store.theme.interactionColor)
+                        .padding(16)
+                        .background(store.theme.controlBackground, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 22).stroke(store.theme.controlBorder, lineWidth: 1))
+
                         sectionTitle("02", "記録モード", "アプリを閉じたあとの動作")
                         VStack(spacing: 10) {
                             ForEach(RecordingMode.allCases) { mode in

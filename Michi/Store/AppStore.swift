@@ -31,6 +31,9 @@ final class AppStore: ObservableObject {
     @Published var theme: AppTheme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: "selectedTheme") }
     }
+    @Published var showsPointsOfInterest: Bool {
+        didSet { UserDefaults.standard.set(showsPointsOfInterest, forKey: "showsPointsOfInterest") }
+    }
     @Published var appLanguage: AppLanguage {
         didSet { UserDefaults.standard.set(appLanguage.rawValue, forKey: "appLanguage") }
     }
@@ -65,6 +68,7 @@ final class AppStore: ObservableObject {
     private let historyStore = LocalHistoryStore()
     private let calendar = Calendar.autoupdatingCurrent
     private var liveRawPoints: [GeoPoint] = []
+    private var liveRawPointsRevision = 0
     private var liveMatchedPoints: [GeoPoint] = []
     private var matchedRawPointCount = 0
     private var liveRoadMatchTask: Task<Void, Never>?
@@ -107,6 +111,7 @@ final class AppStore: ObservableObject {
         case "paper": theme = .paperAtlas
         default: theme = AppTheme(rawValue: savedTheme) ?? .editorialGlass
         }
+        showsPointsOfInterest = UserDefaults.standard.object(forKey: "showsPointsOfInterest") as? Bool ?? true
         if let savedLanguage = UserDefaults.standard.string(forKey: "appLanguage"),
            let language = AppLanguage(rawValue: savedLanguage) {
             // 旧バージョンで保存された「デバイスの言語」は起動時に解決し、
@@ -206,6 +211,24 @@ final class AppStore: ObservableObject {
         return min(lower, upper)...max(lower, upper)
     }
 
+    func setRangeStartDate(_ date: Date) {
+        let base = baseDateRange
+        let duration = max(1, base.upperBound.timeIntervalSince(base.lowerBound))
+        let minimumGap = duration * 0.025
+        let latestStart = max(base.lowerBound, selectedDateRange.upperBound.addingTimeInterval(-minimumGap))
+        let clampedDate = min(max(date, base.lowerBound), latestStart)
+        rangeStartFraction = min(1, max(0, clampedDate.timeIntervalSince(base.lowerBound) / duration))
+    }
+
+    func setRangeEndDate(_ date: Date) {
+        let base = baseDateRange
+        let duration = max(1, base.upperBound.timeIntervalSince(base.lowerBound))
+        let minimumGap = duration * 0.025
+        let earliestEnd = min(base.upperBound, selectedDateRange.lowerBound.addingTimeInterval(minimumGap))
+        let clampedDate = min(max(date, earliestEnd), base.upperBound)
+        rangeEndFraction = min(1, max(0, clampedDate.timeIntervalSince(base.lowerBound) / duration))
+    }
+
     var filteredTracks: [WalkTrack] {
         let range = selectedDateRange
         return tracksForDisplay.filter { $0.endDate >= range.lowerBound && $0.startDate <= range.upperBound }
@@ -278,7 +301,7 @@ final class AppStore: ObservableObject {
 
     var stats: WalkStats {
         let visibleModeKey = visibleTransportModes.map(\.rawValue).sorted().joined(separator: ",")
-        let key = "\(derivedCacheKey)|\(visibleModeKey)"
+        let key = "\(derivedCacheKey)|\(liveRawPointsRevision)|\(visibleModeKey)"
         if cachedStatsKey == key { return cachedStats }
         guard !visibleTransportModes.isEmpty else {
             cachedStatsKey = key
@@ -287,8 +310,10 @@ final class AppStore: ObservableObject {
         }
 
         let range = selectedDateRange
-        var distance: CLLocationDistance = 0
-        var activeDays = Set<Date>()
+        let measured = RecordedDistanceCalculator.summarize(
+            tracks: tracksForDisplay, livePoints: liveRawPoints,
+            range: range, modes: visibleTransportModes, calendar: calendar
+        )
         var firstSeen: [String: Date] = [:]
         var visibleKeys = Set<String>()
         for track in tracksForDisplay.sorted(by: { $0.startDate < $1.startDate }) {
@@ -301,8 +326,6 @@ final class AppStore: ObservableObject {
                 guard visitedAt >= range.lowerBound, visitedAt <= range.upperBound else { continue }
                 let segmentDistance = pair.0.location.distance(from: pair.1.location)
                 guard segmentDistance >= 2 else { continue }
-                distance += segmentDistance
-                activeDays.insert(calendar.startOfDay(for: visitedAt))
                 visibleKeys.insert(roadKey)
             }
         }
@@ -310,14 +333,15 @@ final class AppStore: ObservableObject {
             guard let date = firstSeen[roadKey] else { return false }
             return date >= range.lowerBound && date <= range.upperBound
         }.count
-        let result = WalkStats(newRoads: newRoads, distance: distance, activeDays: activeDays.count)
+        let result = WalkStats(newRoads: newRoads, distance: measured.distance, activeDays: measured.activeDays.count)
         cachedStatsKey = key
         cachedStats = result
         return result
     }
 
     private var derivedCacheKey: String {
-        "\(tracksRevision)|\(period.rawValue)|\(rangeStartFraction.bitPattern)|\(rangeEndFraction.bitPattern)"
+        let day = calendar.startOfDay(for: Date()).timeIntervalSince1970.bitPattern
+        return "\(tracksRevision)|\(day)|\(period.rawValue)|\(rangeStartFraction.bitPattern)|\(rangeEndFraction.bitPattern)"
     }
 
     private func invalidateDerivedCaches() {
@@ -473,6 +497,8 @@ final class AppStore: ObservableObject {
 
     private func updateLiveRoute(_ points: [GeoPoint]) {
         liveRawPoints = points
+        liveRawPointsRevision &+= 1
+        cachedStatsKey = nil
         guard !points.isEmpty else {
             historyStore.clearDraft()
             liveRoadMatchTask?.cancel()

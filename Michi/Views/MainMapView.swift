@@ -21,6 +21,8 @@ struct MainMapView: View {
     @State private var sharesAfterRemix = false
     @State private var mapSnapshotRequestToken = 0
     @State private var sharesAfterMapSnapshot = false
+    @State private var datePickerTarget: DatePickerTarget?
+    @State private var selectedPlace: MapPlaceDetails?
 
     var body: some View {
         ZStack {
@@ -29,6 +31,7 @@ struct MainMapView: View {
                 livePoints: store.livePoints,
                 stats: store.stats,
                 visibleTransportModes: store.visibleTransportModes,
+                showsPointsOfInterest: store.showsPointsOfInterest,
                 mode: store.displayMode,
                 theme: store.theme,
                 recenterToken: recenterToken,
@@ -36,6 +39,11 @@ struct MainMapView: View {
                 reservesBottomControlsSpace: !isUIHidden,
                 onMapTap: {
                     toggleUIVisibility()
+                },
+                onPlaceSelected: { place in
+                    withAnimation(.snappy(duration: 0.24)) {
+                        selectedPlace = place
+                    }
                 },
                 onAnimatedStatsChanged: { nextStats in
                     withAnimation(.linear(duration: 2.0)) {
@@ -93,13 +101,11 @@ struct MainMapView: View {
                                 .staggeredReveal(revealPhase, stage: 4)
                                 FloatingButton(
                                     icon: store.displayMode == .map ? "point.bottomleft.forward.to.point.topright.scurvepath" : "map",
-                                    label: store.displayMode == .map ? "経路だけ" : "地図",
+                                    label: displayModeLabel,
                                     theme: store.theme
                                 ) {
                                     withAnimation(.easeInOut(duration: 0.25)) {
-                                        let nextMode: MapDisplayMode = store.displayMode == .map ? .routesOnly : .map
-                                        if nextMode == .map { sharesAfterRemix = false }
-                                        store.displayMode = nextMode
+                                        cycleDisplayMode()
                                     }
                                 }
                                 .staggeredReveal(revealPhase, stage: 5)
@@ -127,8 +133,24 @@ struct MainMapView: View {
                         Spacer()
                         bottomControls
                     }
+
                 }
                 .transition(.opacity)
+            }
+
+            if let selectedPlace {
+                VStack {
+                    Spacer()
+                    PlaceInfoCard(place: selectedPlace, theme: store.theme) {
+                        withAnimation(.snappy(duration: 0.24)) {
+                            self.selectedPlace = nil
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, isUIHidden ? 18 : 154)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(2)
             }
         }
         .sheet(isPresented: $showsSettings) {
@@ -137,6 +159,9 @@ struct MainMapView: View {
         }
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: [payload.image])
+        }
+        .sheet(item: $datePickerTarget) { target in
+            RangeDatePickerSheet(target: target, store: store)
         }
         .onAppear {
             // レビュー機能追加前にオンボーディングを完了した利用者も一度だけ対象にする。
@@ -173,20 +198,56 @@ struct MainMapView: View {
         #endif
     }
 
+    private var displayModeLabel: String {
+        switch store.displayMode {
+        case .map: "経路だけ"
+        case .routesOnly: "紙の地図"
+        case .excavation: "地図"
+        }
+    }
+
+    private func cycleDisplayMode() {
+        switch store.displayMode {
+        case .map: store.displayMode = .routesOnly
+        case .routesOnly: store.displayMode = .excavation
+        case .excavation:
+            sharesAfterRemix = false
+            store.displayMode = .map
+        }
+    }
+
     private var bottomControls: some View {
         VStack(spacing: 10) {
             PeriodPicker(selection: $store.period, theme: store.theme)
                 .staggeredReveal(revealPhase, stage: 8)
 
             HStack(spacing: 10) {
-                Text(dateLabel(store.baseDateRange.lowerBound))
+                Button {
+                    datePickerTarget = .start
+                } label: {
+                    Text(dateLabel(store.selectedDateRange.lowerBound))
+                        .frame(minWidth: 38, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(LocalizedStringKey("開始日を選択"))
+
                 RangeSlider(
                     lower: $store.rangeStartFraction,
                     upper: $store.rangeEndFraction,
                     color: store.theme.interactionColor
                 )
                 .frame(height: 44)
-                Text(dateLabel(store.baseDateRange.upperBound))
+
+                Button {
+                    datePickerTarget = .end
+                } label: {
+                    Text(dateLabel(store.selectedDateRange.upperBound))
+                        .frame(minWidth: 38, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(LocalizedStringKey("終了日を選択"))
             }
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(store.theme.foregroundColor.opacity(0.72))
@@ -242,7 +303,7 @@ struct MainMapView: View {
 
     @MainActor
     private func requestShare() {
-        if store.displayMode == .map {
+        if store.displayMode != .routesOnly {
             sharesAfterMapSnapshot = true
             mapSnapshotRequestToken &+= 1
             return
@@ -406,6 +467,138 @@ private struct RangeSlider: View {
             .overlay(Circle().stroke(color, lineWidth: 2.5))
             .shadow(color: .black.opacity(0.13), radius: 4, y: 2)
             .position(x: x, y: y)
+    }
+}
+
+private enum DatePickerTarget: String, Identifiable {
+    case start
+    case end
+
+    var id: String { rawValue }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .start: "開始日"
+        case .end: "終了日"
+        }
+    }
+}
+
+private struct RangeDatePickerSheet: View {
+    let target: DatePickerTarget
+    @ObservedObject var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+
+    private var selection: Binding<Date> {
+        Binding(
+            get: {
+                target == .start ? store.selectedDateRange.lowerBound : store.selectedDateRange.upperBound
+            },
+            set: { date in
+                if target == .start {
+                    store.setRangeStartDate(date)
+                } else {
+                    store.setRangeEndDate(date)
+                }
+            }
+        )
+    }
+
+    private var allowedRange: ClosedRange<Date> {
+        if target == .start {
+            return store.baseDateRange.lowerBound...store.selectedDateRange.upperBound
+        }
+        return store.selectedDateRange.lowerBound...store.baseDateRange.upperBound
+    }
+
+    var body: some View {
+        NavigationStack {
+            DatePicker(target.title, selection: selection, in: allowedRange, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .padding()
+                .navigationTitle(target.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完了") { dismiss() }
+                    }
+                }
+        }
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+private struct PlaceInfoCard: View {
+    let place: MapPlaceDetails
+    let theme: AppTheme
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(theme.interactionColor)
+                    .frame(width: 34, height: 34)
+                    .background(theme.interactionColor.opacity(0.12), in: Circle())
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(place.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.foregroundColor)
+                        .lineLimit(2)
+                    if let address = place.address, !address.isEmpty {
+                        Text(address)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(theme.foregroundColor.opacity(0.62))
+                            .lineLimit(2)
+                    } else if place.isLoading {
+                        Text("詳細情報を読み込み中")
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(theme.foregroundColor.opacity(0.55))
+                    }
+                }
+
+                Spacer(minLength: 4)
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.foregroundColor.opacity(0.64))
+                        .frame(width: 30, height: 30)
+                        .background(theme.foregroundColor.opacity(0.07), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(LocalizedStringKey("閉じる"))
+            }
+
+            if place.isLoading || place.phoneNumber != nil || place.website != nil {
+                HStack(spacing: 16) {
+                    if place.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                    if let phoneNumber = place.phoneNumber,
+                       let url = URL(string: "tel:\(phoneNumber.filter { $0.isNumber || $0 == "+" })") {
+                        Link(destination: url) {
+                            Label("電話", systemImage: "phone.fill")
+                        }
+                    }
+                    if let website = place.website {
+                        Link(destination: website) {
+                            Label("Webサイト", systemImage: "safari")
+                        }
+                    }
+                }
+                .font(.system(size: 12, weight: .medium))
+                .tint(theme.interactionColor)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.controlBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(theme.controlBorder, lineWidth: 1))
+        .shadow(color: theme.shadowColor, radius: 18, y: 7)
     }
 }
 
