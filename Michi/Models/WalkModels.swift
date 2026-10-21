@@ -34,6 +34,11 @@ struct GeoPoint: Codable, Hashable, Identifiable {
     var isEstimated: Bool?
     // nilは移動手段の保存前に作られた履歴との後方互換用。
     var transportMode: TransportMode?
+    var speedAccuracy: Double?
+    var reportedSpeedIsValid: Bool?
+    var motionEvidence: MotionEvidence?
+    var recordingEvidence: RecordingEvidence?
+    var pathBreakBefore: Bool?
 
     var id: String { "\(timestamp.timeIntervalSince1970)-\(latitude)-\(longitude)" }
     var coordinate: CLLocationCoordinate2D { .init(latitude: latitude, longitude: longitude) }
@@ -54,7 +59,9 @@ struct GeoPoint: Codable, Hashable, Identifiable {
         longitude = location.coordinate.longitude
         timestamp = location.timestamp
         horizontalAccuracy = location.horizontalAccuracy
-        speed = max(0, location.speed)
+        speed = location.speed.isFinite ? location.speed : -1
+        speedAccuracy = location.speedAccuracy >= 0 ? location.speedAccuracy : nil
+        reportedSpeedIsValid = location.speed >= 0
         isEstimated = false
         self.transportMode = transportMode
     }
@@ -79,17 +86,16 @@ struct GeoPoint: Codable, Hashable, Identifiable {
 
     var estimated: Bool { isEstimated == true }
     var resolvedTransportMode: TransportMode {
-        let speedBasedMode = TransportMode.infer(speedMetersPerSecond: speed)
-        guard let transportMode else { return speedBasedMode }
-        // 旧判定で徒歩／自転車として保存された明らかな高速区間は、履歴ファイルを
-        // 破壊的に書き換えず表示時に補正する。渋滞中の車判定はそのまま維持する。
-        if speedBasedMode == .automotive, transportMode != .automotive {
-            return .automotive
-        }
-        if transportMode == .walking, speedBasedMode == .cycling {
-            return .cycling
-        }
-        return transportMode
+        // A temporal decision must not be overwritten by one instantaneous speed.
+        transportMode ?? TransportMode.infer(speedMetersPerSecond: speed)
+    }
+
+    var isUsableObservation: Bool {
+        recordingEvidence.map { $0.coordinateStatus == "accepted" && !$0.captureExcluded } ?? true
+    }
+
+    func connects(from previous: GeoPoint) -> Bool {
+        pathBreakBefore != true && isUsableObservation && previous.isUsableObservation
     }
 }
 
@@ -101,6 +107,9 @@ struct WalkTrack: Codable, Identifiable, Hashable {
     var isRoadMatched: Bool
     // 推定復元された区間かどうか。Optionalにして既存の履歴JSONをそのまま読めるようにする。
     var isEstimated: Bool?
+    // Only newly recorded tracks use this pipeline. No automatic legacy migration.
+    var processingVersion: Int?
+    var roadMatchAttempted: Bool?
 
     init(
         id: UUID = UUID(),
@@ -118,7 +127,10 @@ struct WalkTrack: Codable, Identifiable, Hashable {
         self.isEstimated = isEstimated
     }
 
-    var displayPoints: [GeoPoint] { matchedPoints.count > 1 ? matchedPoints : rawPoints }
+    var displayPoints: [GeoPoint] {
+        if processingVersion == RecordingProcessor.version { return matchedPoints }
+        return matchedPoints.count > 1 ? matchedPoints : rawPoints
+    }
     var startDate: Date { rawPoints.first?.timestamp ?? createdAt }
     var endDate: Date { rawPoints.last?.timestamp ?? createdAt }
     var containsEstimatedData: Bool {

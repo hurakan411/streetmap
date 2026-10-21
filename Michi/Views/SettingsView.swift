@@ -25,6 +25,10 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 32) {
                         settingsHero
 
+                        #if STREETPRINT_DIAGNOSTICS
+                        MapPerformanceSettingsView(closeSettings: { dismiss() })
+                        #endif
+
                         sectionTitle("00", "言語", "アプリの表示言語")
                         HStack(spacing: 12) {
                             Image(systemName: "globe")

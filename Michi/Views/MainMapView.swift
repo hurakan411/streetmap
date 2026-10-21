@@ -28,6 +28,7 @@ struct MainMapView: View {
         ZStack {
             MapCanvasView(
                 segments: store.allWeightedSegments,
+                segmentsSignature: store.segmentsSignature,
                 livePoints: store.livePoints,
                 stats: store.stats,
                 visibleTransportModes: store.visibleTransportModes,
@@ -73,7 +74,7 @@ struct MainMapView: View {
                     .allowsHitTesting(false)
             }
 
-            if !isUIHidden && store.allWeightedSegments.isEmpty && store.livePoints.isEmpty && revealPhase >= 3 {
+            if !isUIHidden && store.displayRevision > 0 && store.allWeightedSegments.isEmpty && store.livePoints.isEmpty && revealPhase >= 3 {
                 EmptyRouteView(theme: store.theme, hasHistory: !store.tracks.isEmpty)
                     .transition(.opacity)
             }

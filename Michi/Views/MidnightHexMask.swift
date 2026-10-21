@@ -86,11 +86,13 @@ final class MidnightHexSurface {
     static let localRadius = 24.0
     static var mapUnitsPerLocalPoint: Double { MidnightHexGrid().radius / localRadius }
 
-    init(segments: [TornPaperRenderer.Segment]) { index = PaperSegmentIndex(segments: segments) }
+    init(segments: [TornPaperRenderer.Segment], preparedIndex: PaperSegmentIndex? = nil) {
+        index = preparedIndex ?? PaperSegmentIndex(segments: segments)
+    }
     func setCallback(_ callback: (() -> Void)?) { onChange = callback }
 
-    func update(segments: [TornPaperRenderer.Segment]) {
-        index = PaperSegmentIndex(segments: segments)
+    func update(segments: [TornPaperRenderer.Segment], preparedIndex: PaperSegmentIndex? = nil) {
+        index = preparedIndex ?? PaperSegmentIndex(segments: segments)
         revealedCells.removeAll(keepingCapacity: true)
         needsProjection = true
         if valid { onChange?() }
@@ -594,6 +596,10 @@ final class MidnightHexMaskView: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func refreshViewport() {
+        #if STREETPRINT_DIAGNOSTICS
+        let timing = MapPerformanceProbe.begin("main.hexProjectionAndLayers")
+        defer { MapPerformanceProbe.end(timing) }
+        #endif
         guard let mapView, !bounds.isEmpty else { return }
         let rect = mapView.visibleMapRect
         let camera = [Double(bounds.width), Double(bounds.height), rect.minX, rect.minY,
@@ -708,6 +714,10 @@ final class MidnightHexMaskView: UIView {
         let job = BlockOperation()
         job.addExecutionBlock { [weak self, weak job] in
             guard let job, !job.isCancelled else { return }
+            #if STREETPRINT_DIAGNOSTICS
+            let timing = MapPerformanceProbe.begin("worker.hexRaster")
+            defer { MapPerformanceProbe.end(timing) }
+            #endif
             let image = MidnightHexOverview.image(world: world, segments: segments, index: routeIndex,
                 isCancelled: { job.isCancelled })
             guard !job.isCancelled else { return }

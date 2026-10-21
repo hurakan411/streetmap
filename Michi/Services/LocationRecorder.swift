@@ -18,14 +18,10 @@ final class LocationRecorder: NSObject, ObservableObject {
     private var currentPoints: [GeoPoint] = []
     private var recordingMode: RecordingMode = .off
     private var movementCaptureMode: MovementCaptureMode = .all
-    private var lastObservedLocation: CLLocation?
-    private var isExcludingForSpeed = false
-    private var currentMotionTransport: TransportMode?
-    private var lastMotionEvidenceDate: Date?
-    private var recentSpeedSamples: [(date: Date, kilometersPerHour: Double)] = []
-    private var motorizedHoldUntil = Date.distantPast
-    private var sustainedWalkingSince: Date?
-    private var sustainedLowSpeedSince: Date?
+    private var currentMotionEvidence: MotionEvidence?
+    private var processingTask: Task<Void, Never>?
+    private var generation = UUID()
+    private var lastAcceptedCallbackDate = Date.distantPast
     private var lastMotionHistoryQueryDate = Date.distantPast
     private var isMonitoringMotion = false
     private var hasRequestedAlwaysInSession = false
@@ -87,8 +83,7 @@ final class LocationRecorder: NSObject, ObservableObject {
         guard movementCaptureMode != mode else { return }
         finishTrackIfNeeded()
         movementCaptureMode = mode
-        lastObservedLocation = nil
-        isExcludingForSpeed = false
+
     }
 
     private func startServicesIfAuthorized() {
@@ -111,165 +106,58 @@ final class LocationRecorder: NSObject, ObservableObject {
     }
 
     private func consume(_ location: CLLocation) {
-        guard location.horizontalAccuracy >= 0,
+        guard CLLocationCoordinate2DIsValid(location.coordinate),
+              location.horizontalAccuracy >= 0,
               abs(location.timestamp.timeIntervalSinceNow) < 90 else { return }
-
-        // 地図の現在地表示には、記録基準より粗い初回測位も利用する。
-        // 経路として保存する地点だけを下の精度条件で厳しく選別する。
         onLocationChanged?(location)
         guard recordingMode != .off else { return }
-        let maximumRecordingAccuracy = movementCaptureMode == .all ? 150.0 : 65.0
-        guard location.horizontalAccuracy <= maximumRecordingAccuracy else { return }
-
-        let observedSpeed = speedKilometersPerHour(for: location)
-        lastObservedLocation = location
-        if let maximumSpeed = movementCaptureMode.maximumSpeedKilometersPerHour,
-           observedSpeed > maximumSpeed {
-            if !isExcludingForSpeed {
-                isExcludingForSpeed = true
-                finishTrackIfNeeded()
-                onSpeedFiltered?()
-            }
-            return
-        }
-        isExcludingForSpeed = false
-
         if let last = currentPoints.last {
             let gap = location.timestamp.timeIntervalSince(last.timestamp)
-            if gap > 180 {
-                finishTrackIfNeeded()
-            } else if last.location.distance(from: location) < 4 {
-                return
-            }
+            guard gap > 0 else { return }
+            if gap > 180 { finishTrackIfNeeded() }
         }
-
-        let transportMode = resolvedTransportMode(speedKilometersPerHour: observedSpeed)
-        let point = GeoPoint(location: location, transportMode: transportMode)
-        onPointAccepted?(point)
+        // Do not discard the beginning of a bus/train journey while its mode
+        // is pending. Accuracy and mode decisions are attached as metadata.
+        var point = GeoPoint(location: location)
+        point.motionEvidence = currentMotionEvidence
         currentPoints.append(point)
-        onLivePointsChanged?(currentPoints)
+        scheduleProcessing()
     }
 
-    private func speedKilometersPerHour(for location: CLLocation) -> Double {
-        let hasReliableReportedSpeed = location.speed >= 0
-            && (location.speedAccuracy < 0 || location.speedAccuracy <= 3.5)
-        let reported = hasReliableReportedSpeed ? location.speed * 3.6 : nil
-
-        var calculated: Double?
-        if let previous = lastObservedLocation {
-            let interval = location.timestamp.timeIntervalSince(previous.timestamp)
-            let distance = previous.distance(from: location)
-            let minimumReliableDistance = max(
-                6,
-                min(30, max(previous.horizontalAccuracy, location.horizontalAccuracy) * 0.45)
-            )
-            if interval >= 1,
-               interval <= 30,
-               distance >= minimumReliableDistance {
-                calculated = distance / interval * 3.6
+    private func scheduleProcessing() {
+        guard processingTask == nil, !currentPoints.isEmpty else { return }
+        let snapshot = currentPoints
+        let mode = movementCaptureMode
+        let token = generation
+        processingTask = Task { @MainActor [weak self] in
+            let processed = await Task.detached(priority: .userInitiated) {
+                RecordingProcessor.process(snapshot, captureMode: mode)
+            }.value
+            guard let self, !Task.isCancelled, self.generation == token else { return }
+            self.onLivePointsChanged?(processed)
+            if let latest = processed.last(where: { $0.isUsableObservation }),
+               latest.timestamp > self.lastAcceptedCallbackDate {
+                self.lastAcceptedCallbackDate = latest.timestamp
+                self.onPointAccepted?(latest)
             }
+            self.processingTask = nil
+            if self.currentPoints.count > snapshot.count { self.scheduleProcessing() }
         }
-
-        // GPSの位置飛びで徒歩が車扱いになるのを避け、端末が返す速度を優先する。
-        let instantaneous = max(0, reported ?? calculated ?? 0)
-        recentSpeedSamples.append((location.timestamp, instantaneous))
-        let cutoff = location.timestamp.addingTimeInterval(-12)
-        recentSpeedSamples.removeAll { $0.date < cutoff }
-        if recentSpeedSamples.count > 5 {
-            recentSpeedSamples.removeFirst(recentSpeedSamples.count - 5)
-        }
-        let sorted = recentSpeedSamples.map(\.kilometersPerHour).sorted()
-        return sorted[sorted.count / 2]
     }
 
-    private func resolvedTransportMode(speedKilometersPerHour speed: Double) -> TransportMode {
-        let now = Date()
-        // 電車を含む明らかな高速移動は、直前の徒歩判定が残っていても車カテゴリを優先する。
-        if speed > 24 {
-            registerMotorizedEvidence(at: now)
-            return .automotive
-        }
-        let hasFreshMotionEvidence = lastMotionEvidenceDate.map {
-            now.timeIntervalSince($0) <= 35
-        } ?? false
-        if hasFreshMotionEvidence, let currentMotionTransport {
-            switch currentMotionTransport {
-            case .automotive:
-                registerMotorizedEvidence(at: now)
-                return .automotive
-            case .walking where speed <= 13:
-                break
-            case .cycling where speed <= 24:
-                if now >= motorizedHoldUntil {
-                    clearMotorizedState()
-                    return .cycling
-                }
-            default:
-                break
-            }
-        }
-
-        // 駅・信号・渋滞で速度が落ちても、車／電車判定をすぐ徒歩へ戻さない。
-        if now < motorizedHoldUntil {
-            return .automotive
-        }
-        if motorizedHoldUntil != .distantPast {
-            if hasFreshMotionEvidence,
-               currentMotionTransport == .walking,
-               let sustainedWalkingSince,
-               now.timeIntervalSince(sustainedWalkingSince) >= 45 {
-                clearMotorizedState()
-                return .walking
-            }
-            if speed <= 8 {
-                if sustainedLowSpeedSince == nil { sustainedLowSpeedSince = now }
-                if let sustainedLowSpeedSince,
-                   now.timeIntervalSince(sustainedLowSpeedSince) < 45 {
-                    return .automotive
-                }
-                clearMotorizedState()
-            } else {
-                sustainedLowSpeedSince = nil
-                return .automotive
-            }
-        }
-        return TransportMode.infer(speedMetersPerSecond: speed / 3.6)
-    }
-
-    private func registerMotorizedEvidence(at date: Date) {
-        currentMotionTransport = .automotive
-        lastMotionEvidenceDate = date
-        motorizedHoldUntil = max(motorizedHoldUntil, date.addingTimeInterval(90))
-        sustainedWalkingSince = nil
-        sustainedLowSpeedSince = nil
-    }
-
-    private func clearMotorizedState() {
-        motorizedHoldUntil = .distantPast
-        sustainedWalkingSince = nil
-        sustainedLowSpeedSince = nil
+    private func motionEvidence(_ activity: CMMotionActivity, receivedAt: Date) -> MotionEvidence {
+        MotionEvidence(startDate: activity.startDate, receivedAt: receivedAt,
+                       confidence: Int(activity.confidence.rawValue), walking: activity.walking,
+                       running: activity.running, cycling: activity.cycling,
+                       automotive: activity.automotive, stationary: activity.stationary)
     }
 
     private func startMotionUpdatesIfAvailable() {
-        guard !isMonitoringMotion,
-              CMMotionActivityManager.isActivityAvailable() else { return }
+        guard !isMonitoringMotion, CMMotionActivityManager.isActivityAvailable() else { return }
         isMonitoringMotion = true
         motionManager.startActivityUpdates(to: .main) { [weak self] activity in
             guard let self, let activity else { return }
-            guard activity.confidence != .low else { return }
-            if activity.automotive {
-                self.registerMotorizedEvidence(at: Date())
-            } else if activity.cycling {
-                self.currentMotionTransport = .cycling
-                self.lastMotionEvidenceDate = Date()
-                self.sustainedWalkingSince = nil
-            } else if activity.walking || activity.running {
-                self.currentMotionTransport = .walking
-                self.lastMotionEvidenceDate = Date()
-                if self.sustainedWalkingSince == nil {
-                    self.sustainedWalkingSince = Date()
-                }
-            }
+            self.currentMotionEvidence = self.motionEvidence(activity, receivedAt: Date())
         }
     }
 
@@ -279,49 +167,35 @@ final class LocationRecorder: NSObject, ObservableObject {
         let now = Date()
         guard now.timeIntervalSince(lastMotionHistoryQueryDate) >= 30 else { return }
         lastMotionHistoryQueryDate = now
-        motionManager.queryActivityStarting(
-            from: now.addingTimeInterval(-15 * 60),
-            to: now,
-            to: .main
-        ) { [weak self] activities, _ in
-            guard let self,
-                  let activities,
-                  let latestReliable = activities.last(where: { $0.confidence != .low }) else { return }
-
-            if latestReliable.automotive {
-                self.registerMotorizedEvidence(at: Date())
-                return
-            }
-            // 復帰直前まで車／電車だった場合は、駅や信号でstationaryへ変わっていても保持する。
-            if let recentAutomotive = activities.last(where: {
-                $0.confidence != .low && $0.automotive
-            }), now.timeIntervalSince(recentAutomotive.startDate) <= 3 * 60 {
-                self.registerMotorizedEvidence(at: Date())
-            }
+        motionManager.queryActivityStarting(from: now.addingTimeInterval(-3 * 60), to: now, to: .main) {
+            [weak self] activities, _ in
+            guard let self, let latest = activities?.last,
+                  latest.startDate > (self.currentMotionEvidence?.startDate ?? .distantPast) else { return }
+            // A historical event retains its original age. A query must not
+            // make stale automotive evidence look newly observed.
+            self.currentMotionEvidence = self.motionEvidence(latest, receivedAt: latest.startDate)
         }
     }
 
     private func stopMotionUpdates() {
-        guard isMonitoringMotion else { return }
-        motionManager.stopActivityUpdates()
+        if isMonitoringMotion { motionManager.stopActivityUpdates() }
         isMonitoringMotion = false
-        currentMotionTransport = nil
-        lastMotionEvidenceDate = nil
-        recentSpeedSamples = []
-        clearMotorizedState()
+        currentMotionEvidence = nil
     }
 
     private func finishTrackIfNeeded() {
-        defer {
-            currentPoints = []
-            onLivePointsChanged?([])
+        processingTask?.cancel()
+        processingTask = nil
+        generation = UUID()
+        let snapshot = currentPoints
+        currentPoints = []
+        if snapshot.count >= 2 {
+            let processed = RecordingProcessor.process(snapshot, captureMode: movementCaptureMode)
+            // Preserve pending and rejected raw observations too. They are
+            // excluded from visible geometry, not erased from the sensor archive.
+            onTrackFinished?(processed)
         }
-        guard currentPoints.count >= 4 else { return }
-        let distance = zip(currentPoints, currentPoints.dropFirst()).reduce(0) {
-            $0 + $1.0.location.distance(from: $1.1.location)
-        }
-        guard distance >= 30 else { return }
-        onTrackFinished?(currentPoints)
+        onLivePointsChanged?([])
     }
 }
 

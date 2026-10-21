@@ -428,6 +428,10 @@ final class PaperTilePipeline {
     }
 
     func updateViewport(_ rect: MKMapRect, zoomScale: Double) {
+        #if STREETPRINT_DIAGNOSTICS
+        let timing = MapPerformanceProbe.begin("main.paperTileSchedule")
+        defer { MapPerformanceProbe.end(timing) }
+        #endif
         let level = PaperTileKey.level(zoomScale: zoomScale)
         let shown = Set(PaperTileKey.covering(rect, level: level))
         let neighbors = Set(PaperTileKey.covering(rect, level: level, margin: 1))
@@ -467,6 +471,10 @@ final class PaperTilePipeline {
         operation.addExecutionBlock { [weak self, weak operation] in
             guard let self, let operation, !operation.isCancelled else { return }
             autoreleasepool {
+                #if STREETPRINT_DIAGNOSTICS
+                let timing = MapPerformanceProbe.begin("worker.paperTileRaster")
+                defer { MapPerformanceProbe.end(timing) }
+                #endif
                 let path = MKTileOverlayPath(x: key.x, y: key.y, z: key.z,
                     contentScaleFactor: final ? self.scale : 0.5)
                 let image = self.paper.render(at: path, screenPointsPerTileUnit: 1,

@@ -28,7 +28,7 @@ not replaced with guessed road distance or a user-entered target distance.
 Run the same production calculator and model against synthetic regressions:
 
 ```sh
-xcrun swiftc -O Michi/Models/WalkModels.swift Michi/Services/RecordedDistanceCalculator.swift prototypes/RecordedDistance/main.swift -o /private/tmp/streetprint_distance_tests
+xcrun swiftc -O Michi/Models/WalkModels.swift Michi/Services/RecordedDistanceCalculator.swift Michi/Services/RecordingProcessor.swift Michi/Services/RouteGeometry.swift prototypes/RecordedDistance/main.swift -o /private/tmp/streetprint_distance_tests
 /private/tmp/streetprint_distance_tests
 ```
 

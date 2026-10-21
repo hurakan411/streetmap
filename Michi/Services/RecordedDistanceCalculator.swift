@@ -31,6 +31,13 @@ enum RecordedDistanceCalculator {
         var result: [Leg] = []
         var anchor: GeoPoint?
         for point in points {
+            if point.pathBreakBefore == true { anchor = nil }
+            if let evidence = point.recordingEvidence {
+                if evidence.captureExcluded { anchor = nil; continue }
+                // Preserve the last good anchor for an isolated rejected fix,
+                // but never bridge a prolonged gap below.
+                if evidence.coordinateStatus != "accepted" { continue }
+            }
             // Do not bridge an unmeasured gap or a low-quality sample. Missing
             // distance is unknown; a guessed road route is not a measurement.
             let accuracyLimit = point.resolvedTransportMode == .walking ? 65.0 : 150.0
@@ -45,7 +52,8 @@ enum RecordedDistanceCalculator {
             guard let previous = anchor else { anchor = point; continue }
             let interval = point.timestamp.timeIntervalSince(previous.timestamp)
             guard interval > 0 else { continue }
-            guard interval <= 180 else { anchor = point; continue }
+            let maximumInterval: TimeInterval = point.recordingEvidence != nil ? 45 : 180
+            guard interval <= maximumInterval else { anchor = point; continue }
 
             let distance = previous.location.distance(from: point.location)
             let uncertainty = max(5, min(35, (previous.horizontalAccuracy + point.horizontalAccuracy) * 0.5))

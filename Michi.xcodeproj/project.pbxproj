@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        F20020261020000000000001 /* MapPerformanceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20020261020000000000002 /* MapPerformanceDiagnostics.swift */; };
+        F19020261019000000000001 /* RouteRenderPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19020261019000000000002 /* RouteRenderPlan.swift */; };
+		C3785B3DAA0045F299110001 /* RecordingProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3785B3DAA0045F299110002 /* RecordingProcessor.swift */; };
+		C3785B3DAA0045F299110003 /* RouteGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3785B3DAA0045F299110004 /* RouteGeometry.swift */; };
 		D157A6CE10C74D81B0030001 /* RecordedDistanceCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */; };
 		B43D45169C6C4B629742F101 /* MidnightHexMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = B43D45169C6C4B629742F102 /* MidnightHexMask.swift */; };
 		E26B12014AA34DB7A1426031 /* TornPaperRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */; };
@@ -29,6 +33,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        F20020261020000000000002 /* MapPerformanceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPerformanceDiagnostics.swift; sourceTree = "<group>"; };
+        F19020261019000000000002 /* RouteRenderPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRenderPlan.swift; sourceTree = "<group>"; };
+		C3785B3DAA0045F299110002 /* RecordingProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingProcessor.swift; sourceTree = "<group>"; };
+		C3785B3DAA0045F299110004 /* RouteGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGeometry.swift; sourceTree = "<group>"; };
 		D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordedDistanceCalculator.swift; sourceTree = "<group>"; };
 		B43D45169C6C4B629742F102 /* MidnightHexMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MidnightHexMask.swift; sourceTree = "<group>"; };
 		E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TornPaperRenderer.swift; sourceTree = "<group>"; };
@@ -55,6 +63,8 @@
 		15310CCC90C2637EFD2D30EA /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				C3785B3DAA0045F299110002 /* RecordingProcessor.swift */,
+				C3785B3DAA0045F299110004 /* RouteGeometry.swift */,
 				D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */,
 				657069DB8E673765FECCC9B4 /* LocalHistoryStore.swift */,
 				FCD39B53E0F7E12B7E765318 /* LocationRecorder.swift */,
@@ -86,6 +96,8 @@
 				E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */,
 				3578FE2AA6ADFA62E1E793A6 /* MainMapView.swift */,
 				0BE591074EC6CA0CDF4AFB33 /* MapCanvasView.swift */,
+                F19020261019000000000002 /* RouteRenderPlan.swift */,
+                F20020261020000000000002 /* MapPerformanceDiagnostics.swift */,
 				3964AEF41C1BE838A3278400 /* OnboardingView.swift */,
 				4A48700752701B289DFFCD7A /* SettingsView.swift */,
 				1558F3304C6E314674A94D4D /* ShareCardView.swift */,
@@ -216,6 +228,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C3785B3DAA0045F299110001 /* RecordingProcessor.swift in Sources */,
+				C3785B3DAA0045F299110003 /* RouteGeometry.swift in Sources */,
 				D157A6CE10C74D81B0030001 /* RecordedDistanceCalculator.swift in Sources */,
 				B43D45169C6C4B629742F101 /* MidnightHexMask.swift in Sources */,
 				E26B12014AA34DB7A1426031 /* TornPaperRenderer.swift in Sources */,
@@ -224,6 +238,8 @@
 				1AA079CCE2FE5590DC70F977 /* LocationRecorder.swift in Sources */,
 				9FAC2169DAF07425AAFE18FF /* MainMapView.swift in Sources */,
 				C55C2C703D75F607873D596F /* MapCanvasView.swift in Sources */,
+                F19020261019000000000001 /* RouteRenderPlan.swift in Sources */,
+                F20020261020000000000001 /* MapPerformanceDiagnostics.swift in Sources */,
 				3E2B45707305C99C14BE26EE /* MichiApp.swift in Sources */,
 				F6E72CE2C2F175A56B008AC4 /* OnboardingView.swift in Sources */,
 				053069730E7147EC112CEDAD /* RoadMatchingService.swift in Sources */,

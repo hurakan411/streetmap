@@ -71,6 +71,8 @@ final class AppStore: ObservableObject {
     private var liveRawPointsRevision = 0
     private var liveMatchedPoints: [GeoPoint] = []
     private var matchedRawPointCount = 0
+    private var liveMatchedInput: [GeoPoint] = []
+    private var liveMatchTaskID = UUID()
     private var liveRoadMatchTask: Task<Void, Never>?
     private var lastDraftSaveDate = Date.distantPast
     private var lastRecoveryAnchorSaveDate = Date.distantPast
@@ -80,13 +82,23 @@ final class AppStore: ObservableObject {
     private var cachedSegments: [WeightedSegment] = []
     private var cachedStatsKey: String?
     private var cachedStats = WalkStats.zero
+    // Publish one coherent route/stat result, never a half-updated filter.
+    @Published private(set) var displayRevision = 0
+    private(set) var segmentsSignature = 0
+    private var requestedDisplayKey: String?
+    private var displayPreparationTask: Task<Void, Never>?
 
     init() {
         var savedTracks = historyStore.load().sorted { $0.startDate < $1.startDate }
         let recoveredDraft = historyStore.loadDraft()
         if recoveredDraft.count >= 2,
            !savedTracks.contains(where: { $0.rawPoints.last?.timestamp == recoveredDraft.last?.timestamp }) {
-            savedTracks.append(WalkTrack(rawPoints: recoveredDraft))
+            var recovered = WalkTrack(rawPoints: recoveredDraft)
+            if recoveredDraft.contains(where: { $0.recordingEvidence?.version == RecordingProcessor.version }) {
+                recovered.processingVersion = RecordingProcessor.version
+                recovered.matchedPoints = RouteGeometry.observedPoints(from: recoveredDraft)
+            }
+            savedTracks.append(recovered)
             savedTracks.sort { $0.startDate < $1.startDate }
             historyStore.save(savedTracks)
         }
@@ -244,51 +256,8 @@ final class AppStore: ObservableObject {
     }
 
     var allWeightedSegments: [WeightedSegment] {
-        let key = derivedCacheKey
-        if cachedSegmentsKey == key { return cachedSegments }
-
-        let range = selectedDateRange
-        var values: [String: (GeoPoint, GeoPoint, Int, Bool, Date, TransportMode)] = [:]
-        for track in filteredTracks {
-            var seenInTrack = Set<String>()
-            for pair in zip(track.displayPoints, track.displayPoints.dropFirst()) {
-                guard pair.0.location.distance(from: pair.1.location) >= 2 else { continue }
-                let transportMode = pair.1.resolvedTransportMode
-                let visitedAt = min(pair.0.timestamp, pair.1.timestamp)
-                guard visitedAt >= range.lowerBound, visitedAt <= range.upperBound else { continue }
-                let roadKey = SegmentKey.make(pair.0, pair.1)
-                let key = "\(roadKey)|\(transportMode.rawValue)"
-                let isEstimated = track.containsEstimatedData || pair.0.estimated || pair.1.estimated
-                guard seenInTrack.insert(key).inserted else { continue }
-                if let current = values[key] {
-                    // 同じ道路に一度でも実測記録があれば、実線を優先する。
-                    values[key] = (
-                        current.0,
-                        current.1,
-                        current.2 + 1,
-                        current.3 && isEstimated,
-                        min(current.4, visitedAt),
-                        current.5
-                    )
-                } else {
-                    values[key] = (pair.0, pair.1, 1, isEstimated, visitedAt, transportMode)
-                }
-            }
-        }
-        let result = values.map { key, value in
-            WeightedSegment(
-                id: key,
-                start: value.0.coordinate,
-                end: value.1.coordinate,
-                frequency: value.2,
-                isEstimated: value.3,
-                firstVisitedAt: value.4,
-                transportMode: value.5
-            )
-        }.sorted { $0.firstVisitedAt < $1.firstVisitedAt }
-        cachedSegmentsKey = key
-        cachedSegments = result
-        return result
+        requestPreparedDisplayIfNeeded()
+        return cachedSegments
     }
 
     var weightedSegments: [WeightedSegment] {
@@ -300,43 +269,44 @@ final class AppStore: ObservableObject {
     }
 
     var stats: WalkStats {
+        requestPreparedDisplayIfNeeded()
+        return cachedStats
+    }
+
+    private func requestPreparedDisplayIfNeeded() {
         let visibleModeKey = visibleTransportModes.map(\.rawValue).sorted().joined(separator: ",")
         let key = "\(derivedCacheKey)|\(liveRawPointsRevision)|\(visibleModeKey)"
-        if cachedStatsKey == key { return cachedStats }
-        guard !visibleTransportModes.isEmpty else {
-            cachedStatsKey = key
-            cachedStats = .zero
-            return .zero
-        }
-
+        guard key != requestedDisplayKey else { return }
+        requestedDisplayKey = key
+        displayPreparationTask?.cancel()
+        let geometryKey = derivedCacheKey
         let range = selectedDateRange
-        let measured = RecordedDistanceCalculator.summarize(
-            tracks: tracksForDisplay, livePoints: liveRawPoints,
-            range: range, modes: visibleTransportModes, calendar: calendar
-        )
-        var firstSeen: [String: Date] = [:]
-        var visibleKeys = Set<String>()
-        for track in tracksForDisplay.sorted(by: { $0.startDate < $1.startDate }) {
-            for pair in zip(track.displayPoints, track.displayPoints.dropFirst()) {
-                let transportMode = pair.1.resolvedTransportMode
-                guard visibleTransportModes.contains(transportMode) else { continue }
-                let roadKey = SegmentKey.make(pair.0, pair.1)
-                let visitedAt = min(pair.0.timestamp, pair.1.timestamp)
-                if firstSeen[roadKey] == nil { firstSeen[roadKey] = visitedAt }
-                guard visitedAt >= range.lowerBound, visitedAt <= range.upperBound else { continue }
-                let segmentDistance = pair.0.location.distance(from: pair.1.location)
-                guard segmentDistance >= 2 else { continue }
-                visibleKeys.insert(roadKey)
+        let sourceTracks = tracksForDisplay
+        let rawPoints = liveRawPoints
+        let modes = visibleTransportModes
+        let calendar = calendar
+        let reusableSegments = cachedSegmentsKey == geometryKey ? cachedSegments : nil
+        // No GPS geometry, road matching or statistics work runs in a SwiftUI
+        // body. Rapid slider changes coalesce; obsolete results cannot publish.
+        displayPreparationTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: 16_000_000) }
+            catch { return }
+            let worker = Task.detached(priority: .userInitiated) {
+                RouteDisplayPreparation.prepare(tracks: sourceTracks, livePoints: rawPoints,
+                    range: range, modes: modes, calendar: calendar,
+                    reusableSegments: reusableSegments)
             }
+            let result = await withTaskCancellationHandler(operation: { await worker.value },
+                onCancel: { worker.cancel() })
+            guard !Task.isCancelled, let self, self.requestedDisplayKey == key,
+                  let result else { return }
+            self.cachedSegments = result.segments
+            self.cachedSegmentsKey = geometryKey
+            self.segmentsSignature = result.signature
+            self.cachedStats = result.stats
+            self.cachedStatsKey = key
+            self.displayRevision &+= 1
         }
-        let newRoads = visibleKeys.filter { roadKey in
-            guard let date = firstSeen[roadKey] else { return false }
-            return date >= range.lowerBound && date <= range.upperBound
-        }.count
-        let result = WalkStats(newRoads: newRoads, distance: measured.distance, activeDays: measured.activeDays.count)
-        cachedStatsKey = key
-        cachedStats = result
-        return result
     }
 
     private var derivedCacheKey: String {
@@ -425,7 +395,8 @@ final class AppStore: ObservableObject {
     }
 
     private func storeFinishedTrack(_ points: [GeoPoint]) {
-        let newTrack = WalkTrack(rawPoints: points)
+        var newTrack = WalkTrack(rawPoints: points, matchedPoints: RouteGeometry.observedPoints(from: points))
+        newTrack.processingVersion = RecordingProcessor.version
         tracks.append(newTrack)
         tracks.sort { $0.startDate < $1.startDate }
         historyStore.save(tracks)
@@ -434,60 +405,21 @@ final class AppStore: ObservableObject {
             let matched = await RoadMatchingService.shared.match(points)
             guard let index = tracks.firstIndex(where: { $0.id == newTrack.id }) else { return }
             tracks[index].matchedPoints = matched
-            tracks[index].isRoadMatched = matched != points
+            tracks[index].isRoadMatched = matched != RouteGeometry.observedPoints(from: points)
+            tracks[index].roadMatchAttempted = true
             historyStore.save(tracks)
         }
     }
 
     private func handleAcceptedPoint(_ point: GeoPoint) {
         guard recordingMode == .persistent else { return }
-        let previous = recoveryAnchor
         recoveryAnchor = point
-        // 位置更新ごとの同期ファイル書き込みはUIスレッドを詰まらせ、
-        // 大量描画時のボタン反応を遅くするため、復旧用アンカーだけ間引く。
         if Date().timeIntervalSince(lastRecoveryAnchorSaveDate) >= 15 {
             historyStore.saveRecoveryAnchor(point)
             lastRecoveryAnchorSaveDate = Date()
         }
-
-        guard let previous else { return }
-        let gap = point.timestamp.timeIntervalSince(previous.timestamp)
-        let directDistance = previous.location.distance(from: point.location)
-
-        // 連続測位では埋まらなかった区間だけを対象にする。長時間・長距離すぎる移動は
-        // 飛行機など道路経路を推定できない可能性が高いため、誤った線を作らない。
-        guard gap >= 180,
-              gap <= 24 * 60 * 60,
-              directDistance >= 100,
-              directDistance <= 200_000 else { return }
-
-        var start = previous
-        var end = point
-        start.isEstimated = true
-        end.isEstimated = true
-        let averageSpeedMetersPerSecond = directDistance / max(1, gap)
-        if averageSpeedMetersPerSecond * 3.6 >= 15 {
-            // 地下鉄・電車など、GPSが途切れたまま長距離を移動した区間も車カテゴリへ統合する。
-            start.transportMode = .automotive
-            end.transportMode = .automotive
-            start.speed = max(start.speed, averageSpeedMetersPerSecond)
-            end.speed = max(end.speed, averageSpeedMetersPerSecond)
-        }
-        let rawPoints = [start, end]
-        let inferredTrack = WalkTrack(rawPoints: rawPoints, isEstimated: true)
-
-        // まず端点を保存し、道路検索の途中で再び終了されても復元対象を失わないようにする。
-        tracks.append(inferredTrack)
-        tracks.sort { $0.startDate < $1.startDate }
-        historyStore.save(tracks)
-
-        Task {
-            let matched = await RoadMatchingService.shared.match(rawPoints)
-            guard let index = tracks.firstIndex(where: { $0.id == inferredTrack.id }) else { return }
-            tracks[index].matchedPoints = matched
-            tracks[index].isRoadMatched = matched != rawPoints
-            historyStore.save(tracks)
-        }
+        // A recovery anchor is not evidence of the route through a GPS outage.
+        // Do not synthesize an automotive track or call directions for that gap.
     }
 
     private func clearRecoveryAnchorAfterSpeedFilter() {
@@ -496,42 +428,53 @@ final class AppStore: ObservableObject {
     }
 
     private func updateLiveRoute(_ points: [GeoPoint]) {
+        if !liveMatchedInput.isEmpty && Array(points.prefix(liveMatchedInput.count)) != liveMatchedInput {
+            liveMatchedPoints = []
+            liveMatchedInput = []
+            matchedRawPointCount = 0
+        }
         liveRawPoints = points
         liveRawPointsRevision &+= 1
         cachedStatsKey = nil
         guard !points.isEmpty else {
             historyStore.clearDraft()
             liveRoadMatchTask?.cancel()
+            liveMatchTaskID = UUID()
             liveRoadMatchTask = nil
             liveMatchedPoints = []
+            liveMatchedInput = []
             matchedRawPointCount = 0
             livePoints = []
             return
         }
-
         if Date().timeIntervalSince(lastDraftSaveDate) >= 15 {
             historyStore.saveDraft(points)
             lastDraftSaveDate = Date()
         }
-
         refreshLiveDisplay()
         scheduleLiveRoadMatchIfNeeded()
     }
 
     private func scheduleLiveRoadMatchIfNeeded() {
-        guard liveRoadMatchTask == nil,
-              liveRawPoints.count >= 2 else { return }
-
-        let anchorIndex = min(max(0, matchedRawPointCount - 1), liveRawPoints.count - 1)
-        let distanceSinceMatch = liveRawPoints[anchorIndex].location.distance(from: liveRawPoints.last!.location)
-        guard distanceSinceMatch >= 70 else { return }
-
+        guard liveRoadMatchTask == nil, liveRawPoints.count >= 2,
+              liveRawPoints.count != matchedRawPointCount else { return }
+        let observed = RouteGeometry.observedPoints(from: liveRawPoints)
+        guard observed.count >= 2 else { return }
+        let anchor = liveMatchedPoints.last ?? observed[0]
+        guard anchor.location.distance(from: observed.last!.location) >= 70 else { return }
         let snapshot = liveRawPoints
+        let token = UUID()
+        liveMatchTaskID = token
         liveRoadMatchTask = Task {
             let matched = await RoadMatchingService.shared.match(snapshot)
-            guard !Task.isCancelled else { return }
-            liveMatchedPoints = matched
-            matchedRawPointCount = snapshot.count
+            guard !Task.isCancelled, liveMatchTaskID == token else { return }
+            // A newly confirmed transition or rejected GPS spike invalidates
+            // old geometry. Never splice a stale classified prefix into it.
+            if Array(liveRawPoints.prefix(snapshot.count)) == snapshot {
+                liveMatchedPoints = matched
+                liveMatchedInput = snapshot
+                matchedRawPointCount = snapshot.count
+            }
             liveRoadMatchTask = nil
             refreshLiveDisplay()
             scheduleLiveRoadMatchIfNeeded()
@@ -539,32 +482,32 @@ final class AppStore: ObservableObject {
     }
 
     private func refreshLiveDisplay() {
-        guard !liveMatchedPoints.isEmpty else {
-            livePoints = liveRawPoints
+        let observed = RouteGeometry.observedPoints(from: liveRawPoints)
+        guard let last = liveMatchedPoints.last else {
+            livePoints = observed
             return
         }
-
-        var display = liveMatchedPoints
-        let tailStart = min(max(0, matchedRawPointCount - 1), liveRawPoints.count)
-        for point in liveRawPoints.dropFirst(tailStart) {
-            guard let last = display.last,
-                  last.location.distance(from: point.location) >= 1 else { continue }
-            display.append(point)
-        }
-        livePoints = display
+        livePoints = liveMatchedPoints + observed.filter { $0.timestamp > last.timestamp }
     }
 
     private func matchPendingTracksToRoads() {
-        let pendingTracks = tracks.filter { !$0.isRoadMatched && $0.rawPoints.count > 1 }
+        let pendingTracks = tracks.filter {
+            guard $0.rawPoints.count > 1, !$0.isRoadMatched, $0.roadMatchAttempted != true else { return false }
+            #if targetEnvironment(simulator)
+            return $0.processingVersion == RecordingProcessor.version || SampleHistory.isShinjukuPreviewSample($0)
+            #else
+            return $0.processingVersion == RecordingProcessor.version
+            #endif
+        }
         guard !pendingTracks.isEmpty else { return }
 
         Task {
             for pending in pendingTracks {
                 let matched = await RoadMatchingService.shared.match(pending.rawPoints)
-                guard matched != pending.rawPoints,
-                      let index = tracks.firstIndex(where: { $0.id == pending.id }) else { continue }
+                guard let index = tracks.firstIndex(where: { $0.id == pending.id }) else { continue }
                 tracks[index].matchedPoints = matched
-                tracks[index].isRoadMatched = true
+                tracks[index].isRoadMatched = matched != RouteGeometry.observedPoints(from: pending.rawPoints)
+                tracks[index].roadMatchAttempted = true
                 historyStore.save(tracks)
             }
         }

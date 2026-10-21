@@ -25,7 +25,11 @@ struct MapPlaceDetails: Identifiable {
 }
 
 struct MapCanvasView: UIViewRepresentable {
+    #if STREETPRINT_DIAGNOSTICS
+    @AppStorage("mapDiagnosticStage") private var diagnosticStageRaw = MapDiagnosticStage.normal.rawValue
+    #endif
     let segments: [WeightedSegment]
+    let segmentsSignature: Int
     let livePoints: [GeoPoint]
     let stats: WalkStats
     let visibleTransportModes: Set<TransportMode>
@@ -41,6 +45,15 @@ struct MapCanvasView: UIViewRepresentable {
     let onRemixSnapshotChanged: (RemixViewportSnapshot?) -> Void
     let mapSnapshotRequestToken: Int
     let onMapSnapshotReady: (UIImage?) -> Void
+
+    private var effectiveDisplayMode: MapDisplayMode {
+        #if STREETPRINT_DIAGNOSTICS
+        let stage = MapDiagnosticStage(rawValue: diagnosticStageRaw) ?? .normal
+        return stage == .normal ? mode : stage == .covered ? .excavation : .map
+        #else
+        return mode
+        #endif
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -82,6 +95,16 @@ struct MapCanvasView: UIViewRepresentable {
     }
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
+        let timing = MapPerformanceProbe.begin("main.updateUIView")
+        defer { MapPerformanceProbe.end(timing) }
+        let mode = effectiveDisplayMode
+        #if STREETPRINT_DIAGNOSTICS
+        let hidesRoutes = diagnosticStageRaw == MapDiagnosticStage.mapOnly.rawValue
+        let segments = hidesRoutes ? [] : self.segments
+        let segmentsSignature = hidesRoutes ? Int.min : self.segmentsSignature
+        let livePoints = hidesRoutes ? [] : self.livePoints
+        let visibleTransportModes: Set<TransportMode> = hidesRoutes ? [] : self.visibleTransportModes
+        #endif
         context.coordinator.onMapTap = onMapTap
         context.coordinator.onPlaceSelected = onPlaceSelected
         context.coordinator.onAnimatedStatsChanged = onAnimatedStatsChanged
@@ -89,7 +112,11 @@ struct MapCanvasView: UIViewRepresentable {
         context.coordinator.onMapSnapshotReady = onMapSnapshotReady
         context.coordinator.theme = theme
         if theme == .midnightPulse { MidnightHexArtwork.prewarm() }
-        configureMap(mapView, showsPointsOfInterest: showsPointsOfInterest)
+        if context.coordinator.configuredTheme != theme || context.coordinator.configuredPOI != showsPointsOfInterest {
+            configureMap(mapView, showsPointsOfInterest: showsPointsOfInterest)
+            context.coordinator.configuredTheme = theme
+            context.coordinator.configuredPOI = showsPointsOfInterest
+        }
         (mapView as? MichiMapView)?.setRouteOnlyAttributionCover(
             visible: mode == .routesOnly,
             color: UIColor(theme.backgroundColor)
@@ -122,22 +149,22 @@ struct MapCanvasView: UIViewRepresentable {
             context.coordinator.hasCenteredOnUser = true
         }
 
-        let segmentIDs = Set(segments.map(\.id))
-        if !segmentIDs.isEmpty && context.coordinator.segmentIDs.isEmpty && !context.coordinator.hasCenteredOnUser {
-            let rect = mapRect(for: segments)
-            if !rect.isNull {
-                mapView.setVisibleMapRect(
-                    rect,
-                    edgePadding: UIEdgeInsets(top: 145, left: 28, bottom: 170, right: 28),
-                    animated: false
-                )
+        if context.coordinator.centeringSegmentsSignature != segmentsSignature {
+            let segmentIDs = Set(segments.map(\.id))
+            if !segmentIDs.isEmpty && context.coordinator.segmentIDs.isEmpty && !context.coordinator.hasCenteredOnUser {
+                let rect = mapRect(for: segments)
+                if !rect.isNull {
+                    mapView.setVisibleMapRect(rect,
+                        edgePadding: UIEdgeInsets(top: 145, left: 28, bottom: 170, right: 28), animated: false)
+                }
             }
+            context.coordinator.segmentIDs = segmentIDs
+            context.coordinator.centeringSegmentsSignature = segmentsSignature
         }
-        context.coordinator.segmentIDs = segmentIDs
 
         let styleSignature = context.coordinator.styleSignature(mode: mode, theme: theme)
         let dataSignature = context.coordinator.dataSignature(
-            for: segments,
+            for: segmentsSignature,
             visibleTransportModes: visibleTransportModes
         )
         context.coordinator.cacheLatestRouteState(
@@ -259,7 +286,7 @@ struct MapCanvasView: UIViewRepresentable {
             // 通常表示では、期間コントロールと重ならない位置に置く。
             // 共有スナップショット時だけUI非表示時の余白へ切り替える。
             // 経路だけビューはApple地図を全面置換するため、下端の専用カバー内へ収める。
-            bottom: mode == .routesOnly ? 0 : (reservesBottomControlsSpace ? 108 : 4),
+            bottom: effectiveDisplayMode == .routesOnly ? 0 : (reservesBottomControlsSpace ? 108 : 4),
             right: 7
         )
     }
@@ -279,6 +306,16 @@ struct MapCanvasView: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var theme: AppTheme = .editorialGlass
+        var configuredTheme: AppTheme?
+        var configuredPOI: Bool?
+        var centeringSegmentsSignature: Int?
+        private var routeRenderRevision = 0
+        private var plainSnapshotKey: String?
+        private let routeState = RouteAnimationState()
+        private var routeSurface: PersistentRouteOverlay?
+        private weak var routeSurfaceRenderer: PersistentRouteRenderer?
+        private var routePreparationTask: Task<Void, Never>?
+        private var routePreparationRevision = 0
         var segmentIDs = Set<String>()
         var recenterToken = 0
         var hasCenteredOnUser = false
@@ -315,6 +352,7 @@ struct MapCanvasView: UIViewRepresentable {
         var mapSnapshotRequestToken = 0
         private var excavationMask: ExcavationMaskTileOverlay?
         private var excavationMaskSignature: Int?
+        private var maskPreparationTask: Task<Void, Never>?
         private var shouldSuppressMapTap = false
         private var selectedPlaceRequestToken = UUID()
 
@@ -446,7 +484,20 @@ struct MapCanvasView: UIViewRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            true
+            // A pinch/pan/rotation belongs to MapKit, not the UI visibility
+            // toggle. In particular, lifting the last finger after zooming
+            // must not also change the map's layout margins.
+            otherGestureRecognizer is UITapGestureRecognizer
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            // Let MapKit finish double-tap zoom before deciding that this was
+            // a single background tap. POI single-tap selection still works.
+            guard let tap = otherGestureRecognizer as? UITapGestureRecognizer else { return false }
+            return tap.numberOfTapsRequired > 1
         }
 
         func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
@@ -468,7 +519,14 @@ struct MapCanvasView: UIViewRepresentable {
             }
         }
 
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            MapPerformanceProbe.regionWillChange()
+        }
+
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            MapPerformanceProbe.regionDidChange()
+            let timing = MapPerformanceProbe.begin("main.regionDidChange")
+            defer { MapPerformanceProbe.end(timing) }
             updateExcavationScale(on: mapView, settled: true)
             if remixOverlay == nil {
                 publishPlainViewportSnapshotIfPossible(on: mapView)
@@ -478,10 +536,14 @@ struct MapCanvasView: UIViewRepresentable {
         }
 
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            let timing = MapPerformanceProbe.begin("main.visibleRegionChanged")
+            defer { MapPerformanceProbe.end(timing) }
             updateExcavationScale(on: mapView)
         }
 
         private func updateExcavationScale(on mapView: MKMapView, settled: Bool = false) {
+            let timing = MapPerformanceProbe.begin("main.maskViewport")
+            defer { MapPerformanceProbe.end(timing) }
             guard mapView.visibleMapRect.width > 0 else { return }
             (mapView as? MichiMapView)?.midnightHexMask?.refreshViewport()
             excavationMask?.updateViewport(mapView.visibleMapRect,
@@ -544,6 +606,8 @@ struct MapCanvasView: UIViewRepresentable {
             on mapView: MKMapView
         ) {
             routeAnimationTask?.cancel()
+            routePreparationTask?.cancel()
+            routePreparationRevision &+= 1
             stopRemixAnimation()
             mapView.showsUserLocation = false
 
@@ -566,6 +630,7 @@ struct MapCanvasView: UIViewRepresentable {
             }
 
             for pair in zip(latestLivePoints, latestLivePoints.dropFirst()) {
+                guard pair.1.connects(from: pair.0) else { continue }
                 let mode = pair.1.resolvedTransportMode
                 guard visibleTransportModes.contains(mode),
                       isVisibleOnScreen(start: pair.0.coordinate, end: pair.1.coordinate, mapView: mapView) else {
@@ -583,11 +648,12 @@ struct MapCanvasView: UIViewRepresentable {
             }
 
             let oldOverlays = mapView.overlays.filter {
-                $0 is FrequencyPolyline || $0 is LivePolyline || $0 is RouteRemixOverlay
+                $0 is PersistentRouteOverlay || $0 is LivePolyline || $0 is RouteRemixOverlay
                     || $0 is BackgroundTileOverlay || $0 is MapTintOverlay
                     || $0 is ExcavationMaskTileOverlay
             }
             if !oldOverlays.isEmpty { mapView.removeOverlays(oldOverlays) }
+            resetRoutePresentation()
             (mapView as? MichiMapView)?.setMidnightHexSurface(nil)
             excavationMask?.invalidate()
             excavationMask = nil
@@ -635,7 +701,7 @@ struct MapCanvasView: UIViewRepresentable {
             }
         }
 
-        /// モード切替時はFrequencyPolyline／LivePolylineを触らず、背景だけを交換する。
+        /// モード切替時は経路の描画面を触らず、背景だけを交換する。
         /// これにより、地図あり→経路だけで線が描き直されることがない。
         func switchDisplayMode(to mode: MapDisplayMode, on mapView: MKMapView) {
             stopRemixAnimation()
@@ -745,11 +811,12 @@ struct MapCanvasView: UIViewRepresentable {
                 onRemixSnapshotChanged(nil)
             }
             let disposable = mapView.overlays.filter {
-                $0 is RouteRemixOverlay || $0 is FrequencyPolyline || $0 is LivePolyline
+                $0 is RouteRemixOverlay || $0 is PersistentRouteOverlay || $0 is LivePolyline
                     || $0 is BackgroundTileOverlay || $0 is MapTintOverlay
                     || $0 is ExcavationMaskTileOverlay
             }
             if !disposable.isEmpty { mapView.removeOverlays(disposable) }
+            resetRoutePresentation()
             remixOverlay = nil
             remixBackground = nil
             remixMapView = nil
@@ -761,16 +828,11 @@ struct MapCanvasView: UIViewRepresentable {
 
             theme = latestTheme
             updateBackground(mode: mode, theme: latestTheme, on: mapView)
-            let routes = latestSegments
-                .filter { latestVisibleTransportModes.contains($0.transportMode) }
-                .sorted {
-                    if $0.firstVisitedAt == $1.firstVisitedAt { return $0.id < $1.id }
-                    return $0.firstVisitedAt < $1.firstVisitedAt
-                }
-            let overlays = routes.flatMap { routeOverlays(for: $0, theme: latestTheme) }
-            if !overlays.isEmpty { mapView.addOverlays(overlays, level: .aboveLabels) }
+            clearRouteBatch(on: mapView)
             routeStyleSignature = latestStyleSignature
             routeDataSignature = latestDataSignature
+            prepareRouteTransition(latestSegments, modes: latestVisibleTransportModes,
+                dataSignature: latestDataSignature, theme: latestTheme, animated: false, on: mapView)
             visibleTransportModes = latestVisibleTransportModes
             publishStatsTarget(latestStats)
             liveRouteSignature = nil
@@ -929,99 +991,27 @@ struct MapCanvasView: UIViewRepresentable {
             return hasher.finalize()
         }
 
-        func dataSignature(
-            for segments: [WeightedSegment],
-            visibleTransportModes: Set<TransportMode>
-        ) -> Int {
+        func dataSignature(for segmentsSignature: Int, visibleTransportModes: Set<TransportMode>) -> Int {
             var hasher = Hasher()
-            for mode in visibleTransportModes.sorted(by: { $0.rawValue < $1.rawValue }) {
-                hasher.combine(mode.rawValue)
-            }
-            hasher.combine(segments.count)
-            for segment in segments.sorted(by: { $0.id < $1.id }) {
-                hasher.combine(segment.id)
-                hasher.combine(segment.start.latitude)
-                hasher.combine(segment.start.longitude)
-                hasher.combine(segment.end.latitude)
-                hasher.combine(segment.end.longitude)
-                hasher.combine(segment.frequency)
-                hasher.combine(segment.isEstimated)
-                hasher.combine(segment.firstVisitedAt.timeIntervalSinceReferenceDate)
-                hasher.combine(segment.transportMode.rawValue)
-            }
+            hasher.combine(segmentsSignature)
+            for mode in TransportMode.allCases where visibleTransportModes.contains(mode) { hasher.combine(mode.rawValue) }
             return hasher.finalize()
         }
 
         func animateRoutes(
-            _ segments: [WeightedSegment],
-            styleSignature: Int,
-            dataSignature: Int,
-            mode: MapDisplayMode,
-            theme: AppTheme,
-            visibleTransportModes: Set<TransportMode>,
-            targetStats: WalkStats,
-            on mapView: MKMapView
+            _ segments: [WeightedSegment], styleSignature: Int, dataSignature: Int,
+            mode: MapDisplayMode, theme: AppTheme, visibleTransportModes: Set<TransportMode>,
+            targetStats: WalkStats, on mapView: MKMapView
         ) {
             routeAnimationTask?.cancel()
             routeStyleSignature = styleSignature
             routeDataSignature = dataSignature
             self.visibleTransportModes = visibleTransportModes
             publishStatsTarget(targetStats)
-
-            let oldRouteOverlays = mapView.overlays.filter {
-                $0 is FrequencyPolyline
-            }
-            mapView.removeOverlays(oldRouteOverlays)
+            clearRouteBatch(on: mapView)
             updateBackground(mode: mode, theme: theme, on: mapView)
-
-            // 実際の日付間隔は待ち時間に使わない。表示対象だけを日時順の連続した
-            // キューへ詰め直し、記録がない日が続いても描画を止めない。
-            let chronological = segments.filter {
-                visibleTransportModes.contains($0.transportMode)
-            }.sorted {
-                if $0.firstVisitedAt == $1.firstVisitedAt { return $0.id < $1.id }
-                return $0.firstVisitedAt < $1.firstVisitedAt
-            }
-            guard !chronological.isEmpty else {
-                return
-            }
-
-            routeAnimationTask = Task { @MainActor [weak self, weak mapView] in
-                guard let self, let mapView else { return }
-                // MapKit側の最終レンダリング時間を約0.3秒確保し、画面上でも2秒以内に完了させる。
-                let workDuration: CFTimeInterval = 1.65
-                let frameDelay: UInt64 = 33_000_000
-                let startedAt = CACurrentMediaTime()
-                var index = 0
-                while index < chronological.count {
-                    guard !Task.isCancelled,
-                          self.routeStyleSignature == styleSignature,
-                          self.routeDataSignature == dataSignature else { return }
-
-                    // 処理時間を含む実経過時間から到達位置を決める。端末が重い場合は
-                    // 次フレームのバッチを増やして追いつくため、sleepの累積で2秒を超えない。
-                    let elapsed = CACurrentMediaTime() - startedAt
-                    let progress = min(1, elapsed / workDuration)
-                    let timedUpperBound = Int(ceil(progress * Double(chronological.count)))
-                    let upperBound = min(chronological.count, max(index + 1, timedUpperBound))
-                    let overlays: [MKOverlay] = chronological[index..<upperBound].flatMap {
-                        self.routeOverlays(for: $0, theme: theme)
-                    }
-                    if !overlays.isEmpty {
-                        mapView.addOverlays(overlays, level: .aboveLabels)
-                    }
-                    index = upperBound
-                    if index < chronological.count {
-                        let remaining = workDuration - (CACurrentMediaTime() - startedAt)
-                        if remaining > 0 {
-                            try? await Task.sleep(nanoseconds: min(
-                                frameDelay,
-                                UInt64(remaining * 1_000_000_000)
-                            ))
-                        }
-                    }
-                }
-            }
+            prepareRouteTransition(segments, modes: visibleTransportModes, dataSignature: dataSignature,
+                theme: theme, on: mapView)
         }
 
         // 地図あり／経路だけの切替では、背景だけを交換して経路オーバーレイを維持する。
@@ -1037,7 +1027,7 @@ struct MapCanvasView: UIViewRepresentable {
                 let tile = BackgroundTileOverlay(color: UIColor(theme.backgroundColor))
                 // 既存の経路線を再追加せず、背景タイルだけを線の下へ差し込む。
                 if let routeOverlay = mapView.overlays.first(where: {
-                    $0 is FrequencyPolyline || $0 is LivePolyline
+                    $0 is PersistentRouteOverlay || $0 is LivePolyline
                 }) {
                     mapView.insertOverlay(tile, below: routeOverlay)
                 } else {
@@ -1055,6 +1045,7 @@ struct MapCanvasView: UIViewRepresentable {
             on mapView: MKMapView
         ) {
             guard mode == .excavation else {
+                maskPreparationTask?.cancel()
                 (mapView as? MichiMapView)?.setMidnightHexSurface(nil)
                 if let excavationMask {
                     excavationMask.invalidate()
@@ -1069,26 +1060,44 @@ struct MapCanvasView: UIViewRepresentable {
             hasher.combine(latestDataSignature)
             hasher.combine(theme.rawValue)
             for (start, end) in zip(livePoints, livePoints.dropFirst())
-                where visibleTransportModes.contains(end.resolvedTransportMode) {
+                where end.connects(from: start) && visibleTransportModes.contains(end.resolvedTransportMode) {
                 hasher.combine(start.id)
                 hasher.combine(end.id)
             }
             let signature = hasher.finalize()
             guard signature != excavationMaskSignature else { return }
             excavationMaskSignature = signature
-
-            var maskSegments = segments.filter { visibleTransportModes.contains($0.transportMode) }.map {
-                ExcavationMaskTileOverlay.Segment(start: MKMapPoint($0.start), end: MKMapPoint($0.end))
+            maskPreparationTask?.cancel()
+            let requestedTheme = theme
+            maskPreparationTask = Task { @MainActor [weak self, weak mapView] in
+                do { try await Task.sleep(nanoseconds: 16_000_000) } catch { return }
+                let worker = Task.detached(priority: .userInitiated) { () -> ([TornPaperRenderer.Segment], PaperSegmentIndex)? in
+                    var lines = segments.filter { visibleTransportModes.contains($0.transportMode) }.map {
+                        TornPaperRenderer.Segment(start: MKMapPoint($0.start), end: MKMapPoint($0.end))
+                    }
+                    for (start, end) in zip(livePoints, livePoints.dropFirst())
+                        where end.connects(from: start) && visibleTransportModes.contains(end.resolvedTransportMode) {
+                        lines.append(.init(start: MKMapPoint(start.coordinate), end: MKMapPoint(end.coordinate)))
+                    }
+                    guard !Task.isCancelled else { return nil }
+                    let index = PaperSegmentIndex(segments: lines)
+                    return Task.isCancelled ? nil : (lines, index)
+                }
+                let prepared = await withTaskCancellationHandler(operation: { await worker.value },
+                    onCancel: { worker.cancel() })
+                guard !Task.isCancelled, let self, let mapView, let prepared,
+                      self.excavationMaskSignature == signature, self.displayMode == .excavation,
+                      self.theme == requestedTheme else { return }
+                self.applyExcavationMask(segments: prepared.0, index: prepared.1, on: mapView)
             }
-            for (start, end) in zip(livePoints, livePoints.dropFirst())
-                where visibleTransportModes.contains(end.resolvedTransportMode) {
-                maskSegments.append(.init(start: MKMapPoint(start.coordinate), end: MKMapPoint(end.coordinate)))
-            }
+        }
 
+        private func applyExcavationMask(segments maskSegments: [TornPaperRenderer.Segment],
+                                         index: PaperSegmentIndex, on mapView: MKMapView) {
             // Only entering this mode animates the captured screen. Subsequent
             // route/filter updates reuse the same geographic cells immediately.
             if theme == .midnightPulse, let excavationMask, let hex = excavationMask.hexSurface {
-                hex.update(segments: maskSegments)
+                hex.update(segments: maskSegments, preparedIndex: index)
                 excavationMask.updateViewport(mapView.visibleMapRect,
                     zoomScale: Double(mapView.bounds.width) / max(1, mapView.visibleMapRect.width))
                 return
@@ -1099,7 +1108,7 @@ struct MapCanvasView: UIViewRepresentable {
             }
             (mapView as? MichiMapView)?.setMidnightHexSurface(nil)
             let overlay = ExcavationMaskTileOverlay(
-                segments: maskSegments, darkPaper: theme.prefersDarkMap
+                segments: maskSegments, darkPaper: theme.prefersDarkMap, preparedIndex: index
             )
             overlay.updateViewport(mapView.visibleMapRect,
                 zoomScale: Double(mapView.bounds.width) / max(1, mapView.visibleMapRect.width))
@@ -1110,108 +1119,126 @@ struct MapCanvasView: UIViewRepresentable {
             }
             let overlays = mapView.overlays
             let routeIndex = overlays.firstIndex(where: { candidate in
-                if let line = candidate as? FrequencyPolyline {
-                    return !line.isGlowLayer
-                }
-                return candidate is LivePolyline
+                candidate is PersistentRouteOverlay || candidate is LivePolyline
             }) ?? overlays.count
             mapView.insertOverlay(overlay, at: routeIndex, level: .aboveLabels)
         }
 
         func updateRoutesIncrementally(
-            segments: [WeightedSegment],
-            dataSignature: Int,
-            visibleTransportModes: Set<TransportMode>,
-            theme: AppTheme,
-            targetStats: WalkStats,
-            on mapView: MKMapView
+            segments: [WeightedSegment], dataSignature: Int,
+            visibleTransportModes: Set<TransportMode>, theme: AppTheme,
+            targetStats: WalkStats, on mapView: MKMapView
         ) {
-            routeAnimationTask?.cancel()
+            publishStatsTarget(targetStats)
+            guard routeDataSignature != dataSignature else { return }
             routeDataSignature = dataSignature
             self.visibleTransportModes = visibleTransportModes
-            publishStatsTarget(targetStats)
+            prepareRouteTransition(segments, modes: visibleTransportModes, dataSignature: dataSignature,
+                theme: theme, on: mapView)
+        }
 
-            let targetSegments = segments.filter {
-                visibleTransportModes.contains($0.transportMode)
+        private func prepareRouteTransition(_ segments: [WeightedSegment], modes: Set<TransportMode>,
+                                            dataSignature: Int, theme: AppTheme, animated: Bool = true, on mapView: MKMapView) {
+            routePreparationTask?.cancel()
+            routeAnimationTask?.cancel()
+            routePreparationRevision &+= 1
+            let revision = routePreparationRevision
+            let previous = routeState.snapshot()
+            let style = routeStyleSignature
+            let color = theme.uiRouteColor.cgColor, lineScale = theme.lineScale
+            routePreparationTask = Task { @MainActor [weak self, weak mapView] in
+                do { try await Task.sleep(nanoseconds: 16_000_000) } catch { return }
+                let worker = Task.detached(priority: .userInitiated) { () -> (RouteRenderPlan, RouteDrawingPalette)? in
+                    let old = previous.map { $0.plan.visibleSegments(at: $0.step) } ?? []
+                    guard let plan = RouteRenderPlan(previous: old, target: segments.filter { modes.contains($0.transportMode) }) else { return nil }
+                    let palette = RouteDrawingPalette(styles: plan.styles, color: color, lineScale: lineScale)
+                    return Task.isCancelled ? nil : (plan, palette)
+                }
+                let prepared = await withTaskCancellationHandler(operation: { await worker.value },
+                    onCancel: { worker.cancel() })
+                guard !Task.isCancelled, let self, let mapView, let prepared,
+                      self.routePreparationRevision == revision, self.routeStyleSignature == style,
+                      self.routeDataSignature == dataSignature else { return }
+                let plan = prepared.0
+                self.routeState.install(plan, palette: prepared.1)
+                self.ensureRouteSurface(for: plan.bounds, on: mapView)
+                if animated {
+                    self.animateRouteChanges(plan, revision: revision, dataSignature: dataSignature,
+                        styleSignature: style, theme: theme, on: mapView)
+                } else {
+                    self.applyRouteSteps(plan, from: 0, to: plan.stepCount, theme: theme, on: mapView)
+                    self.routeRenderRevision &+= 1
+                    self.publishPlainViewportSnapshotIfPossible(on: mapView)
+                }
             }
-            let targetByID = Dictionary(uniqueKeysWithValues: targetSegments.map { ($0.id, $0) })
-            var renderedLines: [String: FrequencyPolyline] = [:]
-            for case let line as FrequencyPolyline in mapView.overlays where !line.isGlowLayer {
-                renderedLines[line.segmentID] = line
-            }
+        }
 
-            // 同じ道路でも頻度や座標が変わった線は、差分列の中で順番に差し替える。
-            let changedIDs = Set(targetSegments.compactMap { segment -> String? in
-                guard let line = renderedLines[segment.id],
-                      line.segmentVersion != segmentVersion(for: segment) else { return nil }
-                return segment.id
-            })
-
-            let removableLines = renderedLines.values.filter {
-                targetByID[$0.segmentID] == nil || changedIDs.contains($0.segmentID)
-            }
-            let removals = removableLines.sorted {
-                if $0.firstVisitedAt == $1.firstVisitedAt { return $0.segmentID > $1.segmentID }
-                return $0.firstVisitedAt > $1.firstVisitedAt
-            }
-            let additions = targetSegments.filter {
-                renderedLines[$0.id] == nil || changedIDs.contains($0.id)
-            }.sorted {
-                if $0.firstVisitedAt == $1.firstVisitedAt { return $0.id < $1.id }
-                return $0.firstVisitedAt < $1.firstVisitedAt
-            }
-
-            let operationCount = removals.count + additions.count
-            guard operationCount > 0 else {
-                return
-            }
-            let styleSignature = routeStyleSignature
+        private func animateRouteChanges(_ plan: RouteRenderPlan, revision: Int, dataSignature: Int,
+                                         styleSignature: Int?, theme: AppTheme, on mapView: MKMapView) {
             routeAnimationTask = Task { @MainActor [weak self, weak mapView] in
                 guard let self, let mapView else { return }
-                let workDuration: CFTimeInterval = 1.65
-                let frameDelay: UInt64 = 33_000_000
-                let startedAt = CACurrentMediaTime()
-                var operationIndex = 0
-
-                while operationIndex < operationCount {
-                    guard !Task.isCancelled,
+                let count = plan.stepCount
+                let duration: CFTimeInterval = 1.65
+                let started = CACurrentMediaTime()
+                var index = 0
+                while index < count {
+                    guard !Task.isCancelled, self.routePreparationRevision == revision,
                           self.routeStyleSignature == styleSignature,
                           self.routeDataSignature == dataSignature else { return }
-
-                    let elapsed = CACurrentMediaTime() - startedAt
-                    let progress = min(1, elapsed / workDuration)
-                    let timedUpperBound = Int(ceil(progress * Double(operationCount)))
-                    let upperBound = min(operationCount, max(operationIndex + 1, timedUpperBound))
-
-                    // 削除は新しい日時から古い日時へ、追加は古い日時から新しい日時へ。
-                    // 同一フレーム内で複数本を処理しても、この順序は維持する。
-                    let removalUpperBound = min(upperBound, removals.count)
-                    if operationIndex < removalUpperBound {
-                        let ids = Set(removals[operationIndex..<removalUpperBound].map(\.segmentID))
-                        self.removeRouteOverlays(with: ids, from: mapView)
-                    }
-
-                    let additionStart = max(operationIndex, removals.count) - removals.count
-                    let additionUpperBound = max(upperBound, removals.count) - removals.count
-                    if additionStart < additionUpperBound {
-                        let overlays: [MKOverlay] = additions[additionStart..<additionUpperBound].flatMap {
-                            self.routeOverlays(for: $0, theme: theme)
-                        }
-                        mapView.addOverlays(overlays, level: .aboveLabels)
-                    }
-
-                    operationIndex = upperBound
-                    if operationIndex < operationCount {
-                        let remaining = workDuration - (CACurrentMediaTime() - startedAt)
+                    let timed = Int(ceil(min(1, (CACurrentMediaTime() - started) / duration) * Double(count)))
+                    let upper = min(count, max(index + 1, timed))
+                    self.applyRouteSteps(plan, from: index, to: upper, theme: theme, on: mapView)
+                    self.routeRenderRevision &+= 1
+                    index = upper
+                    if index < count {
+                        let remaining = duration - (CACurrentMediaTime() - started)
                         if remaining > 0 {
-                            try? await Task.sleep(nanoseconds: min(
-                                frameDelay,
-                                UInt64(remaining * 1_000_000_000)
-                            ))
+                            try? await Task.sleep(nanoseconds: min(33_000_000, UInt64(remaining * 1_000_000_000)))
                         }
                     }
                 }
+                self.publishPlainViewportSnapshotIfPossible(on: mapView)
             }
+        }
+
+        private func clearRouteBatch(on mapView: MKMapView) {
+            routePreparationTask?.cancel()
+            routePreparationRevision &+= 1
+            routeState.clear()
+            routeSurfaceRenderer?.setNeedsDisplay()
+            routeRenderRevision &+= 1
+        }
+
+        /// Advance only the visible event index. No per-edge MapKit objects
+        /// are created, removed or registered during animation or camera moves.
+        private func applyRouteSteps(_ plan: RouteRenderPlan, from first: Int, to last: Int,
+                                     theme: AppTheme, on mapView: MKMapView) {
+            let timing = MapPerformanceProbe.begin("main.routeAnimationStep")
+            defer { MapPerformanceProbe.end(timing) }
+            let changed = plan.changedBounds(from: first, to: last)
+            routeState.advance(to: last)
+            guard !changed.isNull, let palette = routeState.snapshot()?.palette else { return }
+            let scale = Double(mapView.bounds.width) / max(1, mapView.visibleMapRect.width)
+            let padding = Double(palette.maximumScreenWidth + 2) / max(Double.leastNonzeroMagnitude, scale)
+            routeSurfaceRenderer?.setNeedsDisplay(changed.insetBy(dx: -padding, dy: -padding))
+        }
+
+        private func resetRoutePresentation() {
+            routeSurface = nil
+            routeSurfaceRenderer = nil
+            routeState.clear()
+        }
+
+        private func ensureRouteSurface(for bounds: MKMapRect, on mapView: MKMapView) {
+            guard !bounds.isNull, !bounds.isEmpty else { return }
+            if let surface = routeSurface, surface.boundingMapRect.contains(bounds) { return }
+            let timing = MapPerformanceProbe.begin("main.registerRouteSurface")
+            defer { MapPerformanceProbe.end(timing) }
+            let old = routeSurface
+            let surface = PersistentRouteOverlay(state: routeState, contentBounds: bounds)
+            routeSurface = surface
+            mapView.addOverlay(surface, level: .aboveLabels)
+            if let old { mapView.removeOverlay(old) }
         }
 
         private func publishStatsTarget(_ stats: WalkStats) {
@@ -1223,71 +1250,51 @@ struct MapCanvasView: UIViewRepresentable {
             }
         }
 
-        private func removeRouteOverlays(with segmentIDs: Set<String>, from mapView: MKMapView) {
-            let overlays = mapView.overlays.compactMap { $0 as? FrequencyPolyline }.filter {
-                segmentIDs.contains($0.segmentID)
-            }
-            if !overlays.isEmpty {
-                mapView.removeOverlays(overlays)
-            }
-        }
+
 
         /// 経路だけビューで現在画面に見えている「実際の線」を共有用に切り出す。
         /// 座標は変形せず、画面座標へ正規化するだけなので、表示中の形状と一致する。
         func publishPlainViewportSnapshotIfPossible(on mapView: MKMapView) {
+            let timing = MapPerformanceProbe.begin("main.shareProjection")
+            defer { MapPerformanceProbe.end(timing) }
             guard displayMode == .routesOnly,
                   remixOverlay == nil,
                   mapView.bounds.width > 1,
                   mapView.bounds.height > 1 else { return }
 
             let bounds = mapView.bounds
+            let rect = mapView.visibleMapRect
+            let key = "\(rect.origin.x)|\(rect.origin.y)|\(rect.width)|\(rect.height)|\(bounds)|\(routeRenderRevision)|\(liveRouteSignature ?? 0)|\(latestDataSignature)"
+            guard plainSnapshotKey != key else { return }
+            plainSnapshotKey = key
             var visible: [RemixViewportSnapshot.Segment] = []
-            var liveIndex = 0
-
-            for overlay in mapView.overlays {
-                let line: MKPolyline
-                let id: String
-                let frequency: Int
-                let isEstimated: Bool
-
-                if let frequencyLine = overlay as? FrequencyPolyline,
-                   !frequencyLine.isGlowLayer,
-                   latestVisibleTransportModes.contains(frequencyLine.transportMode) {
-                    line = frequencyLine
-                    id = frequencyLine.segmentID
-                    frequency = frequencyLine.frequency
-                    isEstimated = frequencyLine.isEstimated
-                } else if let liveLine = overlay as? LivePolyline,
-                          !liveLine.isGlowLayer,
-                          latestVisibleTransportModes.contains(liveLine.transportMode) {
-                    line = liveLine
-                    id = "live:\(liveIndex)"
-                    liveIndex += 1
-                    frequency = 1
-                    isEstimated = false
-                } else {
-                    continue
-                }
-
-                guard line.pointCount >= 2 else { continue }
-                let points = line.points()
-                let start = mapView.convert(points[0].coordinate, toPointTo: mapView)
-                let end = mapView.convert(points[line.pointCount - 1].coordinate, toPointTo: mapView)
-                let lineBounds = CGRect(
-                    x: min(start.x, end.x),
-                    y: min(start.y, end.y),
-                    width: max(1, abs(start.x - end.x)),
-                    height: max(1, abs(start.y - end.y))
-                ).insetBy(dx: -4, dy: -4)
-                guard lineBounds.intersects(bounds) else { continue }
-
-                visible.append(RemixViewportSnapshot.Segment(
-                    id: id,
+            func append(id: String, start a: CLLocationCoordinate2D, end b: CLLocationCoordinate2D,
+                        frequency: Int, estimated: Bool) {
+                let start = mapView.convert(a, toPointTo: mapView)
+                let end = mapView.convert(b, toPointTo: mapView)
+                let lineBounds = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                    width: max(1, abs(start.x - end.x)), height: max(1, abs(start.y - end.y)))
+                    .insetBy(dx: -4, dy: -4)
+                guard lineBounds.intersects(bounds) else { return }
+                visible.append(.init(id: id,
                     start: CGPoint(x: start.x / bounds.width, y: start.y / bounds.height),
                     end: CGPoint(x: end.x / bounds.width, y: end.y / bounds.height),
-                    frequency: frequency,
-                    isEstimated: isEstimated
-                ))
+                    frequency: frequency, isEstimated: estimated))
+            }
+            if let frame = routeState.snapshot() {
+                let padding = 12 * rect.width / Double(bounds.width)
+                for index in frame.plan.visibleIndices(in: rect.insetBy(dx: -padding, dy: -padding), step: frame.step) {
+                    let segment = frame.plan.entries[index].segment
+                    append(id: segment.id, start: segment.start, end: segment.end,
+                        frequency: segment.frequency, estimated: segment.isEstimated)
+                }
+            }
+            var liveIndex = 0
+            for case let line as LivePolyline in mapView.overlays
+                where !line.isGlowLayer && latestVisibleTransportModes.contains(line.transportMode) && line.pointCount >= 2 {
+                append(id: "live:\(liveIndex)", start: line.points()[0].coordinate,
+                    end: line.points()[line.pointCount - 1].coordinate, frequency: 1, estimated: false)
+                liveIndex += 1
             }
 
             let snapshot = RemixViewportSnapshot(
@@ -1301,38 +1308,9 @@ struct MapCanvasView: UIViewRepresentable {
             }
         }
 
-        private func segmentVersion(for segment: WeightedSegment) -> Int {
-            var hasher = Hasher()
-            hasher.combine(segment.start.latitude)
-            hasher.combine(segment.start.longitude)
-            hasher.combine(segment.end.latitude)
-            hasher.combine(segment.end.longitude)
-            hasher.combine(segment.frequency)
-            hasher.combine(segment.isEstimated)
-            hasher.combine(segment.transportMode.rawValue)
-            return hasher.finalize()
-        }
-
         private func renderedCoreSegmentIDs(on mapView: MKMapView) -> Set<String> {
-            Set(mapView.overlays.compactMap { overlay in
-                guard let line = overlay as? FrequencyPolyline,
-                      !line.isGlowLayer else { return nil }
-                return line.segmentID
-            })
-        }
-
-        private func routeOverlays(for segment: WeightedSegment, theme: AppTheme) -> [MKOverlay] {
-            var coordinates = [segment.start, segment.end]
-            var result: [MKOverlay] = []
-            let core = FrequencyPolyline(coordinates: &coordinates, count: coordinates.count)
-            core.segmentID = segment.id
-            core.segmentVersion = segmentVersion(for: segment)
-            core.firstVisitedAt = segment.firstVisitedAt
-            core.frequency = segment.frequency
-            core.isEstimated = segment.isEstimated
-            core.transportMode = segment.transportMode
-            result.append(core)
-            return result
+            guard let frame = routeState.snapshot() else { return [] }
+            return Set(frame.plan.visibleSegments(at: frame.step).map(\.id))
         }
 
         func updateLiveRoute(
@@ -1348,6 +1326,7 @@ struct MapCanvasView: UIViewRepresentable {
             for point in points {
                 hasher.combine(point.id)
                 hasher.combine(point.resolvedTransportMode.rawValue)
+                hasher.combine(point.pathBreakBefore)
             }
             let signature = hasher.finalize()
             guard signature != liveRouteSignature else { return }
@@ -1359,8 +1338,9 @@ struct MapCanvasView: UIViewRepresentable {
 
             var groups: [(mode: TransportMode, points: [GeoPoint])] = []
             for pair in zip(points, points.dropFirst()) {
+                guard pair.1.connects(from: pair.0) else { continue }
                 let mode = pair.1.resolvedTransportMode
-                if groups.last?.mode == mode {
+                if groups.last?.mode == mode, groups.last?.points.last?.id == pair.0.id {
                     groups[groups.count - 1].points.append(pair.1)
                 } else {
                     groups.append((mode, [pair.0, pair.1]))
@@ -1376,6 +1356,8 @@ struct MapCanvasView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            let timing = MapPerformanceProbe.begin("main.createOverlayRenderer")
+            defer { MapPerformanceProbe.end(timing) }
             if let tile = overlay as? BackgroundTileOverlay {
                 return MKTileOverlayRenderer(tileOverlay: tile)
             }
@@ -1388,36 +1370,14 @@ struct MapCanvasView: UIViewRepresentable {
             if let remix = overlay as? RouteRemixOverlay {
                 return RouteRemixOverlayRenderer(overlay: remix)
             }
-            if let line = overlay as? FrequencyPolyline {
-                let renderer = MKPolylineRenderer(polyline: line)
-                let intensity = min(1, 0.48 + log2(Double(line.frequency) + 1) * 0.19)
-                let segmentColor = theme.uiRouteColor
-                if line.isGlowLayer {
-                    renderer.strokeColor = theme.uiRouteColor.withAlphaComponent(0.13 + intensity * 0.12)
-                    renderer.lineWidth = (7 + min(13, CGFloat(log2(Double(line.frequency) + 1)) * 3.2)) * theme.lineScale
-                    renderer.lineCap = .round
-                    renderer.lineJoin = .round
-                    return renderer
-                }
-                renderer.strokeColor = segmentColor.withAlphaComponent(line.isEstimated ? min(intensity, 0.58) : intensity)
-                renderer.lineWidth = (1.25 + min(5.2, CGFloat(log2(Double(line.frequency) + 1)) * 1.35)) * theme.lineScale
-                renderer.lineCap = .round
-                renderer.lineJoin = .round
+            if let surface = overlay as? PersistentRouteOverlay {
+                let renderer = PersistentRouteRenderer(surface: surface)
+                if surface === routeSurface { routeSurfaceRenderer = renderer }
                 return renderer
             }
             if let line = overlay as? LivePolyline {
-                let renderer = MKPolylineRenderer(polyline: line)
-                if line.isGlowLayer {
-                    renderer.strokeColor = theme.uiRouteColor.withAlphaComponent(0.25)
-                    renderer.lineWidth = 14
-                    renderer.lineCap = .round
-                    renderer.lineJoin = .round
-                    return renderer
-                }
-                renderer.strokeColor = theme.uiRouteColor.withAlphaComponent(0.85)
-                renderer.lineWidth = 4
-                renderer.lineCap = .round
-                return renderer
+                let color = theme.uiRouteColor.withAlphaComponent(line.isGlowLayer ? 0.25 : 0.85).cgColor
+                return LiveRouteRenderer(line: line, color: color, screenWidth: line.isGlowLayer ? 14 : 4)
             }
             return MKOverlayRenderer(overlay: overlay)
         }
@@ -1436,6 +1396,15 @@ private final class MichiUserLocationView: MKAnnotationView {
         layer.shadowRadius = 5
         layer.shadowOffset = .zero
         displayPriority = .required
+        // This is a location indicator, not an editable map pin. Keep native
+        // annotation selection/tracking out of background map gestures.
+        isEnabled = false
+        isUserInteractionEnabled = false
+        isDraggable = false
+        canShowCallout = false
+        isAccessibilityElement = true
+        accessibilityLabel = NSLocalizedString("現在地", comment: "Current location indicator")
+        accessibilityTraits = .image
     }
 
     required init?(coder: NSCoder) {
@@ -1504,19 +1473,33 @@ private final class MichiMapView: MKMapView {
     }
 }
 
-private final class FrequencyPolyline: MKPolyline {
-    var segmentID = ""
-    var segmentVersion = 0
-    var firstVisitedAt = Date.distantPast
-    var frequency = 1
-    var isEstimated = false
+private final class LivePolyline: MKPolyline {
     var isGlowLayer = false
     var transportMode: TransportMode = .walking
 }
 
-private final class LivePolyline: MKPolyline {
-    var isGlowLayer = false
-    var transportMode: TransportMode = .walking
+private final class LiveRouteRenderer: MKOverlayRenderer {
+    private let line: LivePolyline
+    private let color: CGColor
+    private let screenWidth: CGFloat
+    init(line: LivePolyline, color: CGColor, screenWidth: CGFloat) {
+        self.line = line; self.color = color; self.screenWidth = screenWidth
+        super.init(overlay: line)
+    }
+    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
+        let timing = MapPerformanceProbe.beginSampled("render.liveRoute.sample1of16")
+        defer { MapPerformanceProbe.end(timing) }
+        guard zoomScale.isFinite, zoomScale > 0, line.pointCount > 1 else { return }
+        context.saveGState(); defer { context.restoreGState() }
+        context.clip(to: rect(for: mapRect))
+        context.setStrokeColor(color)
+        context.setLineWidth(screenWidth / zoomScale)
+        context.setLineCap(.round); context.setLineJoin(.round)
+        context.beginPath()
+        context.move(to: point(for: line.points()[0]))
+        for index in 1..<line.pointCount { context.addLine(to: point(for: line.points()[index])) }
+        context.strokePath()
+    }
 }
 
 private struct RemixSourceSegment {
@@ -1716,9 +1699,9 @@ private final class ExcavationMaskTileOverlay: NSObject, MKOverlay {
     let paperColor: CGColor
     private let paper: TornPaperRenderer?
 
-    init(segments: [Segment], darkPaper: Bool) {
+    init(segments: [Segment], darkPaper: Bool, preparedIndex: PaperSegmentIndex? = nil) {
         if darkPaper {
-            hexSurface = MidnightHexSurface(segments: segments)
+            hexSurface = MidnightHexSurface(segments: segments, preparedIndex: preparedIndex)
             paper = nil
             pipeline = nil
         } else {
@@ -1726,7 +1709,7 @@ private final class ExcavationMaskTileOverlay: NSObject, MKOverlay {
             let edge = Self.sharedEdgeMaterial
             let paper = TornPaperRenderer(segments: segments, darkPaper: false,
                 material: edge == nil ? Self.sharedMaterial : nil, edgeMaterial: edge,
-                segmentIndex: PaperSegmentIndex(segments: segments))
+                segmentIndex: preparedIndex ?? PaperSegmentIndex(segments: segments))
             self.paper = paper
             pipeline = PaperTilePipeline(paper: paper, scale: UIScreen.main.scale)
         }
@@ -1761,6 +1744,8 @@ private final class ExcavationMaskRenderer: MKOverlayRenderer {
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
         guard let pipeline = paperOverlay.pipeline else { return }
+        let timing = MapPerformanceProbe.begin("render.paperTiles")
+        defer { MapPerformanceProbe.end(timing) }
         let level = PaperTileKey.level(zoomScale: zoomScale)
         context.saveGState()
         context.clip(to: rect(for: mapRect))
