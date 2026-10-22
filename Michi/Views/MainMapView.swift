@@ -115,6 +115,10 @@ struct MainMapView: View {
                                 }
                                 .staggeredReveal(revealPhase, stage: 6)
                                 FloatingButton(icon: "location.fill", label: "現在地", theme: store.theme) {
+                                    if store.recorder.authorizationStatus == .notDetermined {
+                                        store.recorder.requestForegroundAuthorization()
+                                    }
+                                    store.refreshCurrentLocation()
                                     recenterToken += 1
                                 }
                                 .staggeredReveal(revealPhase, stage: 7)
@@ -158,6 +162,21 @@ struct MainMapView: View {
             SettingsView()
                 .environmentObject(store)
         }
+        .onChange(of: store.showsWidgetRecordingSettings, initial: true) { _, shows in
+            guard shows else { return }
+            showsSettings = true
+            store.showsWidgetRecordingSettings = false
+        }
+        .onChange(of: store.showsWidgetHome, initial: true) { _, shows in
+            guard shows else { return }
+            showsSettings = false
+            sharePayload = nil
+            datePickerTarget = nil
+            selectedPlace = nil
+            sharesAfterRemix = false
+            sharesAfterMapSnapshot = false
+            store.showsWidgetHome = false
+        }
         .sheet(item: $sharePayload) { payload in
             ShareSheet(items: [payload.image])
         }
@@ -171,7 +190,7 @@ struct MainMapView: View {
 
             guard !hasRequestedInitialLocation else { return }
             hasRequestedInitialLocation = true
-            if store.recorder.authorizationStatus == .notDetermined {
+            if store.recordingMode != .off && store.recorder.authorizationStatus == .notDetermined {
                 store.recorder.requestForegroundAuthorization()
             } else if store.recordingMode == .persistent && store.recorder.authorizationStatus == .authorizedWhenInUse {
                 store.recorder.requestBackgroundAuthorization()

@@ -1,9 +1,17 @@
 import CoreLocation
 import Foundation
 import MapKit
+import Combine
+import UIKit
+import WidgetKit
 
 @MainActor
 final class AppStore: ObservableObject {
+    static let shared = AppStore()
+    @Published var widgetRequestedRecordingMode: RecordingMode?
+    @Published var showsWidgetRecordingSettings = false
+    @Published var showsWidgetHome = false
+    private var widgetSubscriptions = Set<AnyCancellable>()
     @Published private(set) var tracks: [WalkTrack] {
         didSet {
             tracksRevision &+= 1
@@ -29,13 +37,19 @@ final class AppStore: ObservableObject {
     }
     @Published var displayMode: MapDisplayMode = .map
     @Published var theme: AppTheme {
-        didSet { UserDefaults.standard.set(theme.rawValue, forKey: "selectedTheme") }
+        didSet {
+            UserDefaults.standard.set(theme.rawValue, forKey: "selectedTheme")
+            publishRecordingWidgetState()
+        }
     }
     @Published var showsPointsOfInterest: Bool {
         didSet { UserDefaults.standard.set(showsPointsOfInterest, forKey: "showsPointsOfInterest") }
     }
     @Published var appLanguage: AppLanguage {
-        didSet { UserDefaults.standard.set(appLanguage.rawValue, forKey: "appLanguage") }
+        didSet {
+            UserDefaults.standard.set(appLanguage.rawValue, forKey: "appLanguage")
+            publishRecordingWidgetState()
+        }
     }
     @Published var recordingMode: RecordingMode {
         didSet {
@@ -46,12 +60,14 @@ final class AppStore: ObservableObject {
                 lastRecoveryAnchorSaveDate = .distantPast
                 historyStore.clearRecoveryAnchor()
             }
+            publishRecordingWidgetState()
         }
     }
     @Published var movementCaptureMode: MovementCaptureMode {
         didSet {
             UserDefaults.standard.set(movementCaptureMode.rawValue, forKey: "movementCaptureMode")
             recorder.setMovementCaptureMode(movementCaptureMode)
+            publishRecordingWidgetState()
         }
     }
     @Published var visibleTransportModes: Set<TransportMode> {
@@ -193,6 +209,45 @@ final class AppStore: ObservableObject {
         recorder.setRecordingMode(recordingMode)
         reviewEligibleActiveDays = calculateReviewEligibleActiveDays(from: tracks)
         matchPendingTracksToRoads()
+        recorder.$authorizationStatus.combineLatest(recorder.$isActivelyCollecting)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _ in self?.publishRecordingWidgetState() }
+            .store(in: &widgetSubscriptions)
+        NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
+            .sink { [weak self] _ in self?.publishRecordingWidgetState() }
+            .store(in: &widgetSubscriptions)
+        publishRecordingWidgetState()
+    }
+
+    func canApplyWidgetRecordingMode(_ mode: RecordingMode) -> Bool {
+        switch mode {
+        case .off: true
+        case .persistent: recorder.authorizationStatus == .authorizedAlways
+        case .background:
+            recorder.authorizationStatus == .authorizedAlways || recorder.authorizationStatus == .authorizedWhenInUse
+        }
+    }
+
+    func widgetRecordingNeedsForeground(_ mode: RecordingMode) -> Bool {
+        // A new When-In-Use background activity session must start while
+        // the app is in use. Do not promise a background start in this case.
+        mode != .off && !recorder.isActivelyCollecting && recorder.authorizationStatus == .authorizedWhenInUse
+            && UIApplication.shared.applicationState != .active
+    }
+
+    func publishRecordingWidgetState() {
+        let state = RecordingWidgetState(
+            recordingMode: recordingMode,
+            movementMode: movementCaptureMode,
+            authorization: Int(recorder.authorizationStatus.rawValue),
+            isCollecting: recorder.isActivelyCollecting,
+            isConfigured: UserDefaults.standard.bool(forKey: "hasCompletedOnboardingV2"),
+            language: appLanguage.rawValue,
+            theme: theme.rawValue
+        )
+        if RecordingWidgetStore.save(state) {
+            WidgetCenter.shared.reloadTimelines(ofKind: RecordingWidgetStore.kind)
+        }
     }
 
     var baseDateRange: ClosedRange<Date> {
@@ -528,7 +583,7 @@ enum SampleHistory {
     }
 
     static func makeShinjuku(now: Date = Date()) -> [WalkTrack] {
-        // 新宿駅を起点に、都庁・歌舞伎町・新宿御苑・代々木・大久保方面へ広がるデモ用ルート。
+        // 新宿駅を起点に、大久保・高田馬場に加え、西新宿・初台・千駄ヶ谷・四谷方面へ広がるデモ用ルート。
         // 交差点を共有させ、頻度の濃淡と「新しい道」が画面上で出るようにする。
         let routes: [[(Double, Double)]] = [
             [(35.6896, 139.7006), (35.6904, 139.7020), (35.6921, 139.7025), (35.6940, 139.7022)],
@@ -578,10 +633,10 @@ enum SampleHistory {
             }
             return WalkTrack(rawPoints: points, createdAt: start, isRoadMatched: false)
         }
-        return localRoutes + makeNorthernStationRoutes(now: now)
+        return localRoutes + makeRoutedStationRoutes(now: now)
     }
 
-    private static func makeNorthernStationRoutes(now: Date) -> [WalkTrack] {
+    private static func makeRoutedStationRoutes(now: Date) -> [WalkTrack] {
         // Encoded walking polylines returned by MapKit for the station-to-station routes.
         // Keeping the routed geometry in the simulator fixture avoids partial route-matching
         // failures that previously hid the entire trip or left only a short fragment visible.
@@ -610,6 +665,26 @@ enum SampleHistory {
             takadanobabaToBabaPark,
             takadanobabaToMejiro
         ].map(decodePolyline)
+        // Public, synthetic routes fetched on 2026-10-21. Geometry is bundled so
+        // simulator launches do not need a network request for these extra roads.
+        let surroundingStations = [
+            // 新宿駅 → 西新宿五丁目駅（MapKit歩行経路、約1820m）
+            #"_syxE_htsYJA?BLlABAHEb@I?BD`@@F@L@HBRDPLd@d@tAAHAHBJVv@O@oBPC@CJ@\@h@C?I@CBAH?LB@@B@f@Bh@CBCF@L@BB@@^@`@ABCF?JBBBB?LBx@AJE@E??J@\BDDB?NBxCGJEJ?DHr@DDFJFf@`@vEZlDDb@HdAO@Fl@E@C?@JR~BTdCQ^NNJR@RATJJINCBAX@BANYZH^QXG^GH@HBNg@TQHkBvAOLRb@SLADwCtBw@ZCFAHE@SBDL~CvJf@vA"#,
+            // 新宿駅 → 中野坂上駅（MapKit歩行経路、約2129m）
+            #"_syxE_htsYa@B?@RtBB@JFDB@TC@CBUDKBeBPeBJ?B?DG?m@DGv@e@GoCa@M@c@@@NBp@OdBGf@GVOPgAxAQDMNCHCFWD?DAPK@gARBLBNAB?BZxAwC|O_@hBUt@AL_ApDy@dDaA~Ee@nBsA|GD@f@RW`Aq@nCQbAIr@APKtDMbBOjAYtAo@tEG?k@IMU"#,
+            // 新宿駅 → 初台駅（MapKit歩行経路、約1570m）
+            #"_syxE_htsYJA?BLlABAHE`BW?BD^?D@HBV@BDB?DDZn@vBBFNL@FHb@@JrBtHlAdD@DJF\|@JVET?Nh@~Ax@vB\p@`JbNrB|CD@DD\l@?JALT^bAhBbFjICBu@n@IJBD\n@B?B??VAzA"#,
+            // 新宿駅 → 参宮橋駅（MapKit歩行経路、約1756m）
+            #"_syxE_htsYJA?BLlABAHE`BW?BD^?D@HBV@BDB?DDZn@vBBFNL@FHb@@JrBtHlAdD@DJF\|@JVET?Nh@~Ax@vB\p@zBdDDGJKz@l@z@p@DHJDNCTHVHLPx@n@TVdA`BP\d@rAf@WdBs@|A}@pDyBBUDCRKDBBBn@_@pAu@HEJ\\QB?lDuB~@c@RAd@RAB"#,
+            // 新宿駅 → 千駄ヶ谷駅（MapKit歩行経路、約1578m）
+            #"_syxE_htsYJAACIcAD?Gu@C?Eg@@A@CC]IGEY?GDEPSbAUB@RGPK|@UbDcAJG@C@CJCx@QAKE]v@OxFgAf@SJK@G@Y|@BfAKGg@Ei@PGHADG@@B?p@cA`F{G^m@fA}BvFkNZaAJu@hAsBRORD?Cf@uC"#,
+            // 新宿駅 → 新宿三丁目・花園神社周辺の路地を回遊 → 新宿御苑前（22区間、約6km）
+            #"_syxEwgtsYpDQJCAGAIHC\Kn@KCSUwB@G@KB?~Em@?CxB[DCDI?WEC}BcBKMs@LAKE]C@A?]sC\rCC?g@HYAcCyAoC_B@C@C?I?JCD[S[SEICKIEs@a@CcAAc@KoA@Q]SeAq@?@IRUKUM?BCFC@C?ITKVAAGCC?EDAB]Q]QABIVA?EDAA@@BGB@CHITECeCkACHI\KFELGAq@UETe@pCGXu@U}Bs@qAc@Op@Mr@[MZLLs@Nq@QIeBo@@C?CCIH_@Bg@?MGeCBADCn@HlBTf@LBO@Gj@E@E@GjCOdAGN??FCP]zBF@n@V@LFJCHI\KFELYhBF_@^P`@P@Eb@uA@@dCjAd@TBIJ]GCQI?GFQj@}AC?GE?EACYMYK@A@GAE?CDQVu@BADCDIAEEEEAJYF[OAOC@IBQAFCRNBdAJtAXBDBDHDTHJEBAFB|@b@BEN[BGFKKI}@i@AG?KTm@Xy@ECSM?E@IDMSKSM?Kl@_Bm@~A?JRLRJBABEFDRJ?DABBDRLbAn@F?FEd@}A|@qED@JB@KTFCPCPYn@WfAw@dCD@NJ@Nn@a@`@YLCGdACdBBf@N`APn@Vj@TZx@NT?d@OAQGSWMEAKSH}AAM@LI|AJR\NFR@Pj@g@NO\Q\CZ@DAFCGWA]Bs@F{BEk@Ci@a@@g@IGEIKIUCe@DeAi@Qi@Yy@w@GA_@GRgATgAXeBWvAUGIGEKCA_@K@G@IOAABCBS?SCw@?CG?GG?YACFGDU?UABc@Z_CA?GACEACGA]I@C?IACAEPwARwAC?ICCEAEMCLB?CBK@AF?J@@D@BJBXFBAFAF@@D@BTFLDHC?CHBTD?BALVFbAV{@hICHGXEEO?y@C"#,
+            // 新宿駅 → 四谷三丁目駅（MapKit歩行経路、約1949m）
+            #"_syxE_htsYJAACIcAD?Gu@C?Eg@@A@CC]IGEY?GDEPSVGAGCS@?d@KB?Ig@YwBMiBEEBIFSEEKO?CDq@EICK?W?uBJuAPw@Ng@P_@HIB?D?BEZu@GGEIT{@h@_Ct@aCXkAXo@BQFo@f@kBBS?]Dc@Ny@Di@?YLeA?YJw@DON_@L{@@YL_@VwANmCAEIw@ASAu@B?^IJSNyAWEBSH@?MW{BAEMIEWAQCaAEECGIoAeAsUHK"#,
+            // 新宿駅 → 若松河田駅（MapKit歩行経路、約2169m）
+            #"_syxE_htsYJAACIcAD?Gu@C?Eg@@A@CC]IGEY?GDEHKCAIG?G?ACAmEa@@E?Og@Gg@GkBg@IOGBg@H}BmAEGe@QQKCGHe@He@GAo@SCJCJa@w@MK[WSKyC_A[U_@i@Ka@Cc@?u@EE@A@ICIH_@Bg@?MGeCBADCAGCw@ECEC?g@IoCUmAKSa@i@aDiGCE[[YOqAo@MKSWu@oAO_@Ka@q@kCEECy@CeBBGBE?E?m@EECGAiAESESCcCKw@W{@eBmE[_ACQ@E@CAGMg@EEIQe@eBTG"#
+        ]
         let routes = [
             directOkubo,
             directShinOkubo,
@@ -617,12 +692,12 @@ enum SampleHistory {
             viaOkubo,
             viaShinOkubo,
             directTakadanobaba
-        ] + stationBranches
+        ] + stationBranches + surroundingStations.map(decodePolyline)
 
         return routes.enumerated().map { index, coordinates in
             let dayOffset = (index % 9) + 1
             let day = Calendar.current.date(byAdding: .day, value: -dayOffset, to: now) ?? now
-            let start = Calendar.current.date(bySettingHour: 8 + index, minute: 10, second: 0, of: day) ?? day
+            let start = Calendar.current.date(bySettingHour: 8 + index % 10, minute: 10, second: 0, of: day) ?? day
             var distance: CLLocationDistance = 0
             let cumulativeDistances = coordinates.enumerated().map { pointIndex, coordinate -> CLLocationDistance in
                 if pointIndex > 0 {
@@ -736,6 +811,16 @@ enum SampleHistory {
 
     static func isShinjukuPreviewSample(_ track: WalkTrack) -> Bool {
         guard track.rawPoints.count >= 4 else { return false }
+        // Older station branches began at Takadanobaba, not Shinjuku. Replace
+        // these synthetic tracks too, rather than retaining duplicates on every launch.
+        if let first = track.rawPoints.first,
+           track.isRoadMatched,
+           abs(first.latitude - 35.71202) < 0.000_001,
+           abs(first.longitude - 139.70343) < 0.000_001,
+           abs(first.horizontalAccuracy - 6) < 0.001,
+           abs(first.speed - 1.25) < 0.001 {
+            return true
+        }
         return track.rawPoints.contains {
             abs($0.latitude - 35.6896) < 0.000_1
                 && abs($0.longitude - 139.7006) < 0.000_1

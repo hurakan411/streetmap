@@ -304,7 +304,7 @@ struct MapCanvasView: UIViewRepresentable {
         }
     }
 
-    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate, UIAdaptivePresentationControllerDelegate {
         var theme: AppTheme = .editorialGlass
         var configuredTheme: AppTheme?
         var configuredPOI: Bool?
@@ -355,6 +355,10 @@ struct MapCanvasView: UIViewRepresentable {
         private var maskPreparationTask: Task<Void, Never>?
         private var shouldSuppressMapTap = false
         private var selectedPlaceRequestToken = UUID()
+        private var selectedPlaceRequest: MKMapItemRequest?
+        private weak var placeDetailController: UIViewController?
+        private weak var placeDetailMapView: MKMapView?
+        private var pendingMapTap: DispatchWorkItem?
 
         init(
             onMapTap: @escaping () -> Void,
@@ -371,32 +375,35 @@ struct MapCanvasView: UIViewRepresentable {
         }
 
         @objc func didTapMap() {
-            DispatchQueue.main.async { [weak self] in
+            pendingMapTap?.cancel()
+            let action = DispatchWorkItem { [weak self] in
                 guard let self else { return }
-                if shouldSuppressMapTap {
-                    shouldSuppressMapTap = false
-                } else {
-                    onMapTap()
-                }
+                guard !shouldSuppressMapTap, placeDetailController == nil else { return }
+                onMapTap()
             }
+            pendingMapTap = action
+            // MapKit resolves a POI tap after its double-tap recognizer has
+            // finished. Cancel this background action if didSelect arrives.
+            let delay = configuredPOI == true && displayMode != .routesOnly ? 0.45 : 0
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
         }
 
         func mapView(_ mapView: MKMapView, didSelect annotation: any MKAnnotation) {
             guard let feature = annotation as? MKMapFeatureAnnotation,
                   feature.featureType == .pointOfInterest else { return }
+            pendingMapTap?.cancel()
+            pendingMapTap = nil
 
-            let isRevealed = (mapView as? MichiMapView)?.midnightHexMask?.contains(feature.coordinate)
-                ?? excavationMask?.contains(feature.coordinate) ?? false
-            if displayMode == .excavation, !isRevealed {
+            if !isSelectablePlace(feature, on: mapView) {
                 mapView.deselectAnnotation(annotation, animated: false)
                 return
             }
 
-            shouldSuppressMapTap = true
-            // POI選択と同じタップが地図用ジェスチャーにも届く場合だけ抑止する。
-            // MapKitが地図タップを発火しないケースでも、次回の背景タップを誤って無視しない。
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.shouldSuppressMapTap = false
+            suppressMapTapForPlaceSelection()
+            if #available(iOS 18.0, *) {
+                onPlaceSelected(nil)
+                presentPlaceDetails(for: feature, on: mapView)
+                return
             }
             let requestToken = UUID()
             selectedPlaceRequestToken = requestToken
@@ -449,9 +456,126 @@ struct MapCanvasView: UIViewRepresentable {
             }
         }
 
+        private func suppressMapTapForPlaceSelection() {
+            shouldSuppressMapTap = true
+            // POI選択と同じタップが地図用ジェスチャーにも届く場合だけ抑止する。
+            // MapKitが地図タップを発火しないケースでも、次回の背景タップを誤って無視しない。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.shouldSuppressMapTap = false
+            }
+        }
+
+        @available(iOS 18.0, *)
+        func mapView(_ mapView: MKMapView, selectionAccessoryFor annotation: any MKAnnotation) -> MKSelectionAccessory? {
+            // Present the detail controller ourselves so MapKit cannot select
+            // a full-screen sheet or present a second accessory over our card.
+            nil
+        }
+
+        @available(iOS 18.0, *)
+        private func presentPlaceDetails(for feature: MKMapFeatureAnnotation, on mapView: MKMapView) {
+            var responder: UIResponder? = mapView
+            var presenter: UIViewController?
+            while let current = responder {
+                if let controller = current as? UIViewController {
+                    presenter = controller
+                    break
+                }
+                responder = current.next
+            }
+            guard let presenter, presenter.presentedViewController == nil else { return }
+
+            selectedPlaceRequest?.cancel()
+            let requestToken = UUID()
+            selectedPlaceRequestToken = requestToken
+            // Resolve the exact tapped POI before presenting the rich card,
+            // so the controller starts with the complete map item, not nil.
+            let request = MKMapItemRequest(mapFeatureAnnotation: feature)
+            selectedPlaceRequest = request
+            request.getMapItem { [weak self, weak mapView, weak presenter] item, _ in
+                DispatchQueue.main.async {
+                    guard let self, let mapView, let presenter,
+                          self.selectedPlaceRequestToken == requestToken else { return }
+                    self.selectedPlaceRequest = nil
+                    if let item, presenter.presentedViewController == nil {
+                        self.showPlaceDetails(item, from: presenter, on: mapView)
+                    } else if item == nil {
+                        self.onPlaceSelected(MapPlaceDetails(
+                            id: "\(feature.coordinate.latitude)|\(feature.coordinate.longitude)",
+                            name: feature.title ?? NSLocalizedString("場所", comment: "Selected map place"),
+                            address: feature.subtitle,
+                            phoneNumber: nil,
+                            website: nil,
+                            coordinate: feature.coordinate,
+                            isLoading: false
+                        ))
+                    }
+                }
+            }
+        }
+
+        @available(iOS 18.0, *)
+        private func showPlaceDetails(_ item: MKMapItem, from presenter: UIViewController, on mapView: MKMapView) {
+            let detail = MKMapItemDetailViewController(mapItem: item, displaysMap: false)
+            detail.delegate = self
+            detail.modalPresentationStyle = .pageSheet
+            if let sheet = detail.sheetPresentationController {
+                // A single detent keeps the map visible even while scrolling
+                // the place information. Never expand to a full-screen card.
+                let compact = UISheetPresentationController.Detent.Identifier("streetprint.place.compact")
+                sheet.detents = [.custom(identifier: compact) { context in
+                    min(380, context.maximumDetentValue * 0.44)
+                }]
+                sheet.selectedDetentIdentifier = compact
+                sheet.prefersGrabberVisible = true
+                sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+                sheet.prefersEdgeAttachedInCompactHeight = true
+                sheet.preferredCornerRadius = 24
+            }
+            placeDetailController = detail
+            placeDetailMapView = mapView
+            presenter.present(detail, animated: true)
+            detail.presentationController?.delegate = self
+        }
+
+        fileprivate func finishPlaceDetails(_ controller: UIViewController, dismiss: Bool, completion: (() -> Void)? = nil) {
+            guard placeDetailController === controller else { return }
+            selectedPlaceRequestToken = UUID()
+            selectedPlaceRequest?.cancel()
+            selectedPlaceRequest = nil
+            placeDetailController = nil
+            let mapView = placeDetailMapView
+            placeDetailMapView = nil
+            let finish = {
+                mapView?.selectedAnnotations.compactMap { $0 as? MKMapFeatureAnnotation }.forEach {
+                    mapView?.deselectAnnotation($0, animated: false)
+                }
+                completion?()
+            }
+            if dismiss {
+                controller.dismiss(animated: true, completion: finish)
+            } else {
+                finish()
+            }
+        }
+
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            finishPlaceDetails(presentationController.presentedViewController, dismiss: false)
+        }
+
+        private func isSelectablePlace(_ feature: MKMapFeatureAnnotation, on mapView: MKMapView) -> Bool {
+            guard configuredPOI == true, displayMode != .routesOnly else { return false }
+            guard displayMode == .excavation else { return true }
+            return (mapView as? MichiMapView)?.midnightHexMask?.contains(feature.coordinate)
+                ?? excavationMask?.contains(feature.coordinate) ?? false
+        }
+
         func mapView(_ mapView: MKMapView, didDeselect annotation: any MKAnnotation) {
             guard annotation is MKMapFeatureAnnotation else { return }
+            guard placeDetailController == nil else { return }
             selectedPlaceRequestToken = UUID()
+            selectedPlaceRequest?.cancel()
+            selectedPlaceRequest = nil
             onPlaceSelected(nil)
         }
 
@@ -1381,6 +1505,13 @@ struct MapCanvasView: UIViewRepresentable {
             }
             return MKOverlayRenderer(overlay: overlay)
         }
+    }
+}
+
+@available(iOS 18.0, *)
+extension MapCanvasView.Coordinator: MKMapItemDetailViewControllerDelegate {
+    func mapItemDetailViewControllerDidFinish(_ detailViewController: MKMapItemDetailViewController) {
+        finishPlaceDetails(detailViewController, dismiss: true)
     }
 }
 

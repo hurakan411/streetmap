@@ -7,70 +7,125 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-        F20020261020000000000001 /* MapPerformanceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20020261020000000000002 /* MapPerformanceDiagnostics.swift */; };
-        F19020261019000000000001 /* RouteRenderPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19020261019000000000002 /* RouteRenderPlan.swift */; };
-		C3785B3DAA0045F299110001 /* RecordingProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3785B3DAA0045F299110002 /* RecordingProcessor.swift */; };
-		C3785B3DAA0045F299110003 /* RouteGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3785B3DAA0045F299110004 /* RouteGeometry.swift */; };
-		D157A6CE10C74D81B0030001 /* RecordedDistanceCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */; };
-		B43D45169C6C4B629742F101 /* MidnightHexMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = B43D45169C6C4B629742F102 /* MidnightHexMask.swift */; };
-		E26B12014AA34DB7A1426031 /* TornPaperRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */; };
 		053069730E7147EC112CEDAD /* RoadMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADC4594EECFBB077240122D /* RoadMatchingService.swift */; };
 		0849F113BD5801BA1C66BACB /* WalkModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0DC77CBA103B5BB2A77F6FB /* WalkModels.swift */; };
+		0A04EA71715DF96518FFF168 /* StreetPrintWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D3C333960E25EC40744E3DCE /* StreetPrintWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1378D5822696C6D47ECD95DF /* ShareCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1558F3304C6E314674A94D4D /* ShareCardView.swift */; };
 		1AA079CCE2FE5590DC70F977 /* LocationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCD39B53E0F7E12B7E765318 /* LocationRecorder.swift */; };
+		1BE50E6FE9DE7CE6A4E8098E /* MapPerformanceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A784A84FB7285D7523AF84 /* MapPerformanceDiagnostics.swift */; };
+		1C7A575D3B6FEAA03B9A59E9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D241517DC8BD4EE41A0D05F2 /* PrivacyInfo.xcprivacy */; };
+		1D9D0CB20EEE9708309DFF7D /* RecordingWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03B69B9BE8D144D668D5448 /* RecordingWidgetIntents.swift */; };
+		1F9FE54507AE41B9DBEF80CC /* RecordingProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D4640789E56A8075C913221 /* RecordingProcessor.swift */; };
+		34914DA087A58C406E874378 /* RecordingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D491063582B04EF4B45001 /* RecordingSettings.swift */; };
 		3E2B45707305C99C14BE26EE /* MichiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 857B940E40EB422DE18C0C80 /* MichiApp.swift */; };
+		4159D860019781DC960980D0 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 880250AF16C41D9E50E4C8A0 /* Localizable.strings */; };
+		4210E3A9A45959FB09FC7F1C /* RecordingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D491063582B04EF4B45001 /* RecordingSettings.swift */; };
+		43F7068690BEE146259D5D0E /* RouteGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18EA50F0ABD5EE2416E32A0 /* RouteGeometry.swift */; };
+		455D29A91130BD09834CAD98 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = ED827CF135CE9748DC37CE34 /* Localizable.strings */; };
 		7467E5D9FF05113EC6AFCE9A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A48700752701B289DFFCD7A /* SettingsView.swift */; };
+		7A31ABE531E6036C95B0413F /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0FBDA438BFCC39EDC4E3D251 /* InfoPlist.strings */; };
+		7B98F3740DD456849E9561BC /* MidnightHexMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22777A4654A01F099FCDAB1D /* MidnightHexMask.swift */; };
+		8251C6DDD5240B565C112C40 /* RecordedDistanceCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56DD4DF010E1EF09EF28EDA2 /* RecordedDistanceCalculator.swift */; };
+		8DBAAF51A8D20380118EF613 /* StreetPrintRecordingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3938B862590621D50C393928 /* StreetPrintRecordingWidget.swift */; };
+		9AC250B175CDA1B119F63450 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D241517DC8BD4EE41A0D05F2 /* PrivacyInfo.xcprivacy */; };
+		9CC64042FD2DB5B4C71C38D1 /* RouteRenderPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 585B10BBAC19268F9D65CE9E /* RouteRenderPlan.swift */; };
 		9FAC2169DAF07425AAFE18FF /* MainMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3578FE2AA6ADFA62E1E793A6 /* MainMapView.swift */; };
-		A4C2D8E1F9B3476A8D1C2E5F /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = B7D4E91C3A6F4280B5E7D2A1 /* Localizable.strings */; };
-		A9C4F1D8B2E6473091A5C7E3 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B2D7A1C4E8F34950A6C2D1B7 /* PrivacyInfo.xcprivacy */; };
-		AA91D3F7C2E64B8591A0C6D4 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = C8F2A6D1B9E34750A4C3D8F6 /* InfoPlist.strings */; };
+		B0FB0F18A791F4D29C1C6CB0 /* RecordingWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03B69B9BE8D144D668D5448 /* RecordingWidgetIntents.swift */; };
 		B33F567C4B15E3096BA96BEE /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF7E98E3C9BC7745155D38F /* AppStore.swift */; };
 		C36B314010EBB4FFB2528304 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EB999A739A94D0E9CD6CECD /* ShareSheet.swift */; };
 		C55C2C703D75F607873D596F /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BE591074EC6CA0CDF4AFB33 /* MapCanvasView.swift */; };
 		D1E84D8B43E1B4FF9D62FC71 /* LocalHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657069DB8E673765FECCC9B4 /* LocalHistoryStore.swift */; };
+		E0E91C59A9BD2701AA429004 /* TornPaperRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8D66F784C9230732F9C45E9 /* TornPaperRenderer.swift */; };
 		F6E72CE2C2F175A56B008AC4 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3964AEF41C1BE838A3278400 /* OnboardingView.swift */; };
 		F797CB3480376E6CD45D3D5A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B608DAD8450067E54ADD73E0 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		C7EF6D2E7698F57B93AF6E8D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BC11FC8EE9E31949CCC3F90A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1CB11F1524223376D9182C5F;
+			remoteInfo = StreetPrintWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		76B777D6F258E43D2422D403 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0A04EA71715DF96518FFF168 /* StreetPrintWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-        F20020261020000000000002 /* MapPerformanceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPerformanceDiagnostics.swift; sourceTree = "<group>"; };
-        F19020261019000000000002 /* RouteRenderPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRenderPlan.swift; sourceTree = "<group>"; };
-		C3785B3DAA0045F299110002 /* RecordingProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingProcessor.swift; sourceTree = "<group>"; };
-		C3785B3DAA0045F299110004 /* RouteGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGeometry.swift; sourceTree = "<group>"; };
-		D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordedDistanceCalculator.swift; sourceTree = "<group>"; };
-		B43D45169C6C4B629742F102 /* MidnightHexMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MidnightHexMask.swift; sourceTree = "<group>"; };
-		E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TornPaperRenderer.swift; sourceTree = "<group>"; };
+		0BC89334E103B96091420BBC /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		0BE591074EC6CA0CDF4AFB33 /* MapCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCanvasView.swift; sourceTree = "<group>"; };
+		0D4640789E56A8075C913221 /* RecordingProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingProcessor.swift; sourceTree = "<group>"; };
 		1558F3304C6E314674A94D4D /* ShareCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardView.swift; sourceTree = "<group>"; };
 		1EB999A739A94D0E9CD6CECD /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
 		1EF7E98E3C9BC7745155D38F /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
+		1F53060CF386BB2C71661B95 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		22777A4654A01F099FCDAB1D /* MidnightHexMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MidnightHexMask.swift; sourceTree = "<group>"; };
 		3578FE2AA6ADFA62E1E793A6 /* MainMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMapView.swift; sourceTree = "<group>"; };
+		3938B862590621D50C393928 /* StreetPrintRecordingWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreetPrintRecordingWidget.swift; sourceTree = "<group>"; };
 		3964AEF41C1BE838A3278400 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		4A48700752701B289DFFCD7A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		56DD4DF010E1EF09EF28EDA2 /* RecordedDistanceCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordedDistanceCalculator.swift; sourceTree = "<group>"; };
+		585B10BBAC19268F9D65CE9E /* RouteRenderPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRenderPlan.swift; sourceTree = "<group>"; };
 		657069DB8E673765FECCC9B4 /* LocalHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHistoryStore.swift; sourceTree = "<group>"; };
+		691B464DB56CEF35AF377712 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
+		83A784A84FB7285D7523AF84 /* MapPerformanceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPerformanceDiagnostics.swift; sourceTree = "<group>"; };
 		857B940E40EB422DE18C0C80 /* MichiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MichiApp.swift; sourceTree = "<group>"; };
-		B2D7A1C4E8F34950A6C2D1B7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A03B69B9BE8D144D668D5448 /* RecordingWidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingWidgetIntents.swift; sourceTree = "<group>"; };
+		A2D491063582B04EF4B45001 /* RecordingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSettings.swift; sourceTree = "<group>"; };
 		B608DAD8450067E54ADD73E0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		C1E6A2B8D4F0497E93A5C0D2 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plain; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		C46D88ED8A460B31BBD91A20 /* Michi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Michi.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		C6B1E8A4D3F542079A2C5E1B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plain; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		C8AE2F32DEF27184990B9921 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		CADC4594EECFBB077240122D /* RoadMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoadMatchingService.swift; sourceTree = "<group>"; };
+		D241517DC8BD4EE41A0D05F2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		D3C333960E25EC40744E3DCE /* StreetPrintWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = StreetPrintWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E0DC77CBA103B5BB2A77F6FB /* WalkModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkModels.swift; sourceTree = "<group>"; };
+		E18EA50F0ABD5EE2416E32A0 /* RouteGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGeometry.swift; sourceTree = "<group>"; };
+		F8D66F784C9230732F9C45E9 /* TornPaperRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TornPaperRenderer.swift; sourceTree = "<group>"; };
 		FCD39B53E0F7E12B7E765318 /* LocationRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationRecorder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		13BC4177A6D3D2B1829EDCF4 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				880250AF16C41D9E50E4C8A0 /* Localizable.strings */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		15310CCC90C2637EFD2D30EA /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				C3785B3DAA0045F299110002 /* RecordingProcessor.swift */,
-				C3785B3DAA0045F299110004 /* RouteGeometry.swift */,
-				D157A6CE10C74D81B0030002 /* RecordedDistanceCalculator.swift */,
 				657069DB8E673765FECCC9B4 /* LocalHistoryStore.swift */,
 				FCD39B53E0F7E12B7E765318 /* LocationRecorder.swift */,
+				56DD4DF010E1EF09EF28EDA2 /* RecordedDistanceCalculator.swift */,
+				0D4640789E56A8075C913221 /* RecordingProcessor.swift */,
 				CADC4594EECFBB077240122D /* RoadMatchingService.swift */,
+				E18EA50F0ABD5EE2416E32A0 /* RouteGeometry.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		3CC053B71F9BA4210BCFA368 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				A2D491063582B04EF4B45001 /* RecordingSettings.swift */,
+				A03B69B9BE8D144D668D5448 /* RecordingWidgetIntents.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		405851B6261B6CABE3DD6CAC /* Store */ = {
@@ -92,18 +147,27 @@
 		62DABDCA1B7BBDE3D98824B8 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				B43D45169C6C4B629742F102 /* MidnightHexMask.swift */,
-				E26B12014AA34DB7A1426032 /* TornPaperRenderer.swift */,
 				3578FE2AA6ADFA62E1E793A6 /* MainMapView.swift */,
 				0BE591074EC6CA0CDF4AFB33 /* MapCanvasView.swift */,
-                F19020261019000000000002 /* RouteRenderPlan.swift */,
-                F20020261020000000000002 /* MapPerformanceDiagnostics.swift */,
+				83A784A84FB7285D7523AF84 /* MapPerformanceDiagnostics.swift */,
+				22777A4654A01F099FCDAB1D /* MidnightHexMask.swift */,
 				3964AEF41C1BE838A3278400 /* OnboardingView.swift */,
+				585B10BBAC19268F9D65CE9E /* RouteRenderPlan.swift */,
 				4A48700752701B289DFFCD7A /* SettingsView.swift */,
 				1558F3304C6E314674A94D4D /* ShareCardView.swift */,
 				1EB999A739A94D0E9CD6CECD /* ShareSheet.swift */,
+				F8D66F784C9230732F9C45E9 /* TornPaperRenderer.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		6A3E955A67F8380FAC58CC23 /* StreetPrintWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				3938B862590621D50C393928 /* StreetPrintRecordingWidget.swift */,
+				13BC4177A6D3D2B1829EDCF4 /* Resources */,
+			);
+			path = StreetPrintWidgets;
 			sourceTree = "<group>";
 		};
 		AB77DFBEC9993DCA385C7A2C /* Michi */ = {
@@ -131,6 +195,8 @@
 			isa = PBXGroup;
 			children = (
 				AB77DFBEC9993DCA385C7A2C /* Michi */,
+				3CC053B71F9BA4210BCFA368 /* Shared */,
+				6A3E955A67F8380FAC58CC23 /* StreetPrintWidgets */,
 				C8A16D5CFA62AA50B66D2337 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -139,6 +205,7 @@
 			isa = PBXGroup;
 			children = (
 				C46D88ED8A460B31BBD91A20 /* Michi.app */,
+				D3C333960E25EC40744E3DCE /* StreetPrintWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -147,9 +214,9 @@
 			isa = PBXGroup;
 			children = (
 				B608DAD8450067E54ADD73E0 /* Assets.xcassets */,
-				B2D7A1C4E8F34950A6C2D1B7 /* PrivacyInfo.xcprivacy */,
-				C8F2A6D1B9E34750A4C3D8F6 /* InfoPlist.strings */,
-				B7D4E91C3A6F4280B5E7D2A1 /* Localizable.strings */,
+				D241517DC8BD4EE41A0D05F2 /* PrivacyInfo.xcprivacy */,
+				0FBDA438BFCC39EDC4E3D251 /* InfoPlist.strings */,
+				ED827CF135CE9748DC37CE34 /* Localizable.strings */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -157,16 +224,36 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1CB11F1524223376D9182C5F /* StreetPrintWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 41E956D2230C0D5636BDE6A1 /* Build configuration list for PBXNativeTarget "StreetPrintWidgets" */;
+			buildPhases = (
+				F9A5BC95D24AB5AC66D10947 /* Sources */,
+				D5C28550802884F57B2C9460 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = StreetPrintWidgets;
+			packageProductDependencies = (
+			);
+			productName = StreetPrintWidgets;
+			productReference = D3C333960E25EC40744E3DCE /* StreetPrintWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		B678512718AFBAAFB1B2831C /* Michi */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E52C506FDB8C89A2F93FD69D /* Build configuration list for PBXNativeTarget "Michi" */;
 			buildPhases = (
 				AA623F81F8415C3BBA9C213D /* Sources */,
 				89F5B8BAF29B84FC6C7583D0 /* Resources */,
+				76B777D6F258E43D2422D403 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				3BA29ED4C25088937A020997 /* PBXTargetDependency */,
 			);
 			name = Michi;
 			packageProductDependencies = (
@@ -182,15 +269,20 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1430;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
+					1CB11F1524223376D9182C5F = {
+						DevelopmentTeam = 9927M765H2;
+						ProvisioningStyle = Automatic;
+					};
 					B678512718AFBAAFB1B2831C = {
+						DevelopmentTeam = 9927M765H2;
 						ProvisioningStyle = Automatic;
 					};
 				};
 			};
 			buildConfigurationList = 8F23EE4900D1208587CA6B9F /* Build configuration list for PBXProject "Michi" */;
-			developmentRegion = ja;
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
@@ -205,6 +297,7 @@
 			projectRoot = "";
 			targets = (
 				B678512718AFBAAFB1B2831C /* Michi */,
+				1CB11F1524223376D9182C5F /* StreetPrintWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -215,9 +308,18 @@
 			buildActionMask = 2147483647;
 			files = (
 				F797CB3480376E6CD45D3D5A /* Assets.xcassets in Resources */,
-				A9C4F1D8B2E6473091A5C7E3 /* PrivacyInfo.xcprivacy in Resources */,
-				AA91D3F7C2E64B8591A0C6D4 /* InfoPlist.strings in Resources */,
-				A4C2D8E1F9B3476A8D1C2E5F /* Localizable.strings in Resources */,
+				7A31ABE531E6036C95B0413F /* InfoPlist.strings in Resources */,
+				455D29A91130BD09834CAD98 /* Localizable.strings in Resources */,
+				1C7A575D3B6FEAA03B9A59E9 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D5C28550802884F57B2C9460 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4159D860019781DC960980D0 /* Localizable.strings in Resources */,
+				9AC250B175CDA1B119F63450 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,56 +330,106 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C3785B3DAA0045F299110001 /* RecordingProcessor.swift in Sources */,
-				C3785B3DAA0045F299110003 /* RouteGeometry.swift in Sources */,
-				D157A6CE10C74D81B0030001 /* RecordedDistanceCalculator.swift in Sources */,
-				B43D45169C6C4B629742F101 /* MidnightHexMask.swift in Sources */,
-				E26B12014AA34DB7A1426031 /* TornPaperRenderer.swift in Sources */,
 				B33F567C4B15E3096BA96BEE /* AppStore.swift in Sources */,
 				D1E84D8B43E1B4FF9D62FC71 /* LocalHistoryStore.swift in Sources */,
 				1AA079CCE2FE5590DC70F977 /* LocationRecorder.swift in Sources */,
 				9FAC2169DAF07425AAFE18FF /* MainMapView.swift in Sources */,
 				C55C2C703D75F607873D596F /* MapCanvasView.swift in Sources */,
-                F19020261019000000000001 /* RouteRenderPlan.swift in Sources */,
-                F20020261020000000000001 /* MapPerformanceDiagnostics.swift in Sources */,
+				1BE50E6FE9DE7CE6A4E8098E /* MapPerformanceDiagnostics.swift in Sources */,
 				3E2B45707305C99C14BE26EE /* MichiApp.swift in Sources */,
+				7B98F3740DD456849E9561BC /* MidnightHexMask.swift in Sources */,
 				F6E72CE2C2F175A56B008AC4 /* OnboardingView.swift in Sources */,
+				8251C6DDD5240B565C112C40 /* RecordedDistanceCalculator.swift in Sources */,
+				1F9FE54507AE41B9DBEF80CC /* RecordingProcessor.swift in Sources */,
+				34914DA087A58C406E874378 /* RecordingSettings.swift in Sources */,
+				B0FB0F18A791F4D29C1C6CB0 /* RecordingWidgetIntents.swift in Sources */,
 				053069730E7147EC112CEDAD /* RoadMatchingService.swift in Sources */,
+				43F7068690BEE146259D5D0E /* RouteGeometry.swift in Sources */,
+				9CC64042FD2DB5B4C71C38D1 /* RouteRenderPlan.swift in Sources */,
 				7467E5D9FF05113EC6AFCE9A /* SettingsView.swift in Sources */,
 				1378D5822696C6D47ECD95DF /* ShareCardView.swift in Sources */,
 				C36B314010EBB4FFB2528304 /* ShareSheet.swift in Sources */,
+				E0E91C59A9BD2701AA429004 /* TornPaperRenderer.swift in Sources */,
 				0849F113BD5801BA1C66BACB /* WalkModels.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F9A5BC95D24AB5AC66D10947 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4210E3A9A45959FB09FC7F1C /* RecordingSettings.swift in Sources */,
+				1D9D0CB20EEE9708309DFF7D /* RecordingWidgetIntents.swift in Sources */,
+				8DBAAF51A8D20380118EF613 /* StreetPrintRecordingWidget.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		3BA29ED4C25088937A020997 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1CB11F1524223376D9182C5F /* StreetPrintWidgets */;
+			targetProxy = C7EF6D2E7698F57B93AF6E8D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin PBXVariantGroup section */
-		B7D4E91C3A6F4280B5E7D2A1 /* Localizable.strings */ = {
+		0FBDA438BFCC39EDC4E3D251 /* InfoPlist.strings */ = {
 			isa = PBXVariantGroup;
 			children = (
-				C1E6A2B8D4F0497E93A5C0D2 /* en */,
+				1F53060CF386BB2C71661B95 /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+		880250AF16C41D9E50E4C8A0 /* Localizable.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				0BC89334E103B96091420BBC /* en */,
+				691B464DB56CEF35AF377712 /* ja */,
 			);
 			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
-		C8F2A6D1B9E34750A4C3D8F6 /* InfoPlist.strings */ = {
+		ED827CF135CE9748DC37CE34 /* Localizable.strings */ = {
 			isa = PBXVariantGroup;
 			children = (
-				C6B1E8A4D3F542079A2C5E1B /* en */,
+				C8AE2F32DEF27184990B9921 /* en */,
 			);
-			name = InfoPlist.strings;
+			name = Localizable.strings;
 			sourceTree = "<group>";
 		};
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		102750CDDB76EA51C4B19F35 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = StreetPrintWidgets/Resources/StreetPrintWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = StreetPrintWidgets/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = jp.michi.walkmap.widgets;
+				PRODUCT_NAME = StreetPrintWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) STREETPRINT_WIDGET_EXTENSION";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		53551DA4A3733CA5ECB0D627 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Michi/Resources/Michi.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 9927M765H2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Michi/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -287,9 +439,29 @@
 				PRODUCT_BUNDLE_IDENTIFIER = jp.michi.walkmap;
 				PRODUCT_NAME = Michi;
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		93EA2F5F06533138FE68D4B7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = StreetPrintWidgets/Resources/StreetPrintWidgets.entitlements;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = StreetPrintWidgets/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = jp.michi.walkmap.widgets;
+				PRODUCT_NAME = StreetPrintWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) STREETPRINT_WIDGET_EXTENSION";
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -298,6 +470,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -331,9 +504,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 9927M765H2;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -355,6 +529,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -365,8 +540,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Michi/Resources/Michi.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = 9927M765H2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Michi/Resources/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -376,9 +551,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = jp.michi.walkmap;
 				PRODUCT_NAME = Michi;
 				SDKROOT = iphoneos;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -387,6 +561,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -420,9 +595,10 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 9927M765H2;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -437,6 +613,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -446,6 +623,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		41E956D2230C0D5636BDE6A1 /* Build configuration list for PBXNativeTarget "StreetPrintWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				102750CDDB76EA51C4B19F35 /* Debug */,
+				93EA2F5F06533138FE68D4B7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		8F23EE4900D1208587CA6B9F /* Build configuration list for PBXProject "Michi" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

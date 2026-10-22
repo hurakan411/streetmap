@@ -6,7 +6,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: 9927M765H2
     CODE_SIGN_STYLE: Automatic
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 1.0
@@ -19,6 +19,11 @@ targets:
       - path: Michi
         excludes:
           - Resources/Info.plist
+          - Resources/Michi.entitlements
+      - path: Shared
+    dependencies:
+      - target: StreetPrintWidgets
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: jp.michi.walkmap
@@ -27,5 +32,28 @@ targets:
         SUPPORTS_MACCATALYST: NO
         INFOPLIST_FILE: Michi/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Michi/Resources/Michi.entitlements
     scheme:
       testTargets: []
+  StreetPrintWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Shared
+      - path: StreetPrintWidgets
+        excludes:
+          - Resources/Info.plist
+          - Resources/StreetPrintWidgets.entitlements
+      - path: Michi/Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: jp.michi.walkmap.widgets
+        PRODUCT_NAME: StreetPrintWidgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: StreetPrintWidgets/Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: StreetPrintWidgets/Resources/StreetPrintWidgets.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) STREETPRINT_WIDGET_EXTENSION"

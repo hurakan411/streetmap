@@ -181,6 +181,8 @@ struct SettingsView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(16)
                             }
+                            #endif
+                            #if DEBUG || STREETPRINT_DIAGNOSTICS
                             Divider().padding(.leading, 52)
                             Button { restartOnboardingForDebug() } label: {
                                 Label("オンボーディングを再表示", systemImage: "arrow.counterclockwise.circle")
@@ -255,6 +257,11 @@ struct SettingsView: View {
             }
         }
         .tint(store.theme.interactionColor)
+        .onChange(of: store.widgetRequestedRecordingMode, initial: true) { _, mode in
+            guard let mode else { return }
+            store.widgetRequestedRecordingMode = nil
+            selectRecordingMode(mode)
+        }
         .onReceive(store.recorder.$authorizationStatus) { status in
             handleAuthorizationChange(status)
         }
@@ -290,7 +297,7 @@ struct SettingsView: View {
         return "\(version) (\(build))"
     }
 
-    #if DEBUG
+    #if DEBUG || STREETPRINT_DIAGNOSTICS
     private func restartOnboardingForDebug() {
         dismiss()
         DispatchQueue.main.async {

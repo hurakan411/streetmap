@@ -1,10 +1,10 @@
+import Combine
 import CoreLocation
 import CoreMotion
 import SwiftUI
 
 struct OnboardingView: View {
     @EnvironmentObject private var store: AppStore
-    @Environment(\.openURL) private var openURL
     @Binding var isComplete: Bool
     @State private var page = 0
     @State private var selectedRecordingMode: RecordingMode = .persistent
@@ -30,6 +30,7 @@ struct OnboardingView: View {
                     ThemeSelectionPage(selection: $selectedTheme).tag(4)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
+                .disabled(isWaitingForAuthorization)
 
                 footer
             }
@@ -43,13 +44,16 @@ struct OnboardingView: View {
             selectedTheme = store.theme
             hasLoadedSelections = true
         }
-        .onChange(of: store.recorder.authorizationStatus) { _, status in
+        // Recorder is a nested ObservableObject: observe its publisher directly.
+        // Deliver after @Published has committed the new authorization value.
+        .onReceive(store.recorder.$authorizationStatus.receive(on: RunLoop.main)) { status in
             guard isWaitingForAuthorization else { return }
             if status == .authorizedAlways || status == .authorizedWhenInUse {
                 isWaitingForAuthorization = false
                 finishOnboarding()
             } else if status == .denied || status == .restricted {
                 isWaitingForAuthorization = false
+                finishOnboarding(recordingModeOverride: .off)
             }
         }
     }
@@ -114,14 +118,7 @@ struct OnboardingView: View {
                 .background(Color(red: 0.075, green: 0.085, blue: 0.105), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             }
             .buttonStyle(.plain)
-
-            if page == pageCount - 1 {
-                Button("記録せずに始める") {
-                    finishOnboarding(recordingModeOverride: .off)
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.black.opacity(0.45))
-            }
+            .disabled(isWaitingForAuthorization)
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 14)
@@ -132,35 +129,15 @@ struct OnboardingView: View {
     }
 
     private var primaryButtonTitle: String {
-        guard page == pageCount - 1 else { return "次へ" }
-        if selectedRecordingMode == .off { return "この設定で始める" }
-        switch store.recorder.authorizationStatus {
-        case .notDetermined:
-            return "位置情報を許可して始める"
-        case .authorizedWhenInUse:
-            return selectedRecordingMode == .persistent ? "常時記録で始める" : "この設定で始める"
-        case .authorizedAlways:
-            return "この設定で始める"
-        case .denied:
-            return "iPhoneの設定を開く"
-        case .restricted:
-            return "位置情報なしで続ける"
-        @unknown default:
-            return "設定を続ける"
-        }
+        page == pageCount - 1 ? "続ける" : "次へ"
     }
 
     private var primaryButtonSymbol: String {
-        guard page == pageCount - 1 else { return "arrow.right" }
-        if selectedRecordingMode == .off { return "checkmark" }
-        switch store.recorder.authorizationStatus {
-        case .denied: return "gearshape.fill"
-        case .authorizedAlways: return "figure.walk"
-        default: return "location.fill"
-        }
+        "arrow.right"
     }
 
     private func primaryAction() {
+        guard !isWaitingForAuthorization else { return }
         guard page == pageCount - 1 else {
             withAnimation(.snappy) { page += 1 }
             return
@@ -177,11 +154,7 @@ struct OnboardingView: View {
             store.recorder.requestForegroundAuthorization()
         case .authorizedWhenInUse, .authorizedAlways:
             finishOnboarding()
-        case .denied:
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-                openURL(url)
-            }
-        case .restricted:
+        case .denied, .restricted:
             finishOnboarding(recordingModeOverride: .off)
         @unknown default:
             finishOnboarding(recordingModeOverride: .off)

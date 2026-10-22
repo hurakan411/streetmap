@@ -184,8 +184,6 @@
 "好きな地図で、\n始めよう。" = "Choose your map.\nThen start exploring.";
 "経路や地図の色を選べます。\nテンプレートはいつでも変更できます。" = "Choose the look of your map and routes.\nYou can change the template anytime.";
 "この設定で始める" = "Start with these settings";
-"位置情報を許可して始める" = "Allow location and start";
-"記録せずに始める" = "Start without recording";
 "いつもの街に、まだ知らない道がある。" = "There are still unknown roads in your familiar city.";
 "次は、\n白い道へ。" = "Next, head for\nthe blank roads.";
 "歩くほど、地図がひろがる。" = "The more you walk, the more your map grows.";
@@ -210,3 +208,6 @@
 "通った道は色になり、まだ知らない道が見えてくる。\nいつもの散歩に、次の行き先を。" = "The roads you take fill with color, revealing what is still unexplored.\nGive every walk somewhere new to go.";
 "通った道" = "Explored";
 "まだの道" = "Unexplored";
+"記録モードを変更" = "Change recording mode";
+"記録する移動を変更" = "Change travel capture";
+"アプリで記録設定を開いてください" = "Open recording settings in the app.";
