@@ -2,6 +2,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let michiRestartOnboarding = Notification.Name("michiRestartOnboarding")
+    static let michiShowMapGuide = Notification.Name("michiShowMapGuide")
 }
 
 @main

@@ -1,3 +1,4 @@
+import Combine
 import CoreLocation
 import MapKit
 import StoreKit
@@ -11,7 +12,7 @@ struct MainMapView: View {
     @State private var sharePayload: SharePayload?
     @State private var recenterToken = 0
     @State private var hasRequestedInitialLocation = false
-    @State private var isUIHidden = false
+    @State private var isUIHidden = !UserDefaults.standard.bool(forKey: "mapGuide.completed.v1")
     @State private var isHidingUI = false
     @State private var revealPhase = 9
     @State private var revealTask: Task<Void, Never>?
@@ -27,6 +28,14 @@ struct MainMapView: View {
     @StateObject private var coursePlanner = WalkingCoursePlanner()
     @State private var showsCourseOriginSearch = false
     @State private var previousCourseDisplayMode: MapDisplayMode?
+    @AppStorage("mapGuide.completed.v1") private var hasCompletedMapGuide = false
+    @State private var guideStep: MapGuideStep? = UserDefaults.standard.bool(forKey: "mapGuide.completed.v1") ? nil : .reveal
+    @State private var guideIsReady = false
+    @State private var guideAuthorizationStatus: CLAuthorizationStatus = .notDetermined
+    @State private var guideContentOpacity = 0.0
+    @State private var guideIsTransitioning = false
+    @State private var guideTransitionTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -43,7 +52,7 @@ struct MainMapView: View {
                 targetLocation: mapTargetLocation,
                 reservesBottomControlsSpace: !isUIHidden,
                 onMapTap: {
-                    if !coursePlanner.isPresented { toggleUIVisibility() }
+                    if guideStep == nil && !coursePlanner.isPresented { toggleUIVisibility() }
                 },
                 onPlaceSelected: { place in
                     withAnimation(.snappy(duration: 0.24)) {
@@ -85,6 +94,7 @@ struct MainMapView: View {
                 }
             )
             .ignoresSafeArea()
+            .allowsHitTesting(guideStep == nil)
 
             if store.displayMode == .map && store.theme == .paperAtlas {
                 store.theme.backgroundColor.opacity(0.09)
@@ -103,6 +113,7 @@ struct MainMapView: View {
                         HStack {
                             if !coursePlanner.isPresented {
                                 VerticalStatsPanel(stats: animatedStats, theme: store.theme, revealPhase: revealPhase)
+                                    .mapGuideTarget(.stats)
                             }
                             Spacer()
                         }
@@ -120,6 +131,7 @@ struct MainMapView: View {
                                 FloatingButton(icon: "gearshape.fill", label: "設定", theme: store.theme) {
                                     showsSettings = true
                                 }
+                                .mapGuideTarget(.settings)
                                 .staggeredReveal(revealPhase, stage: 4)
                                 }
                                 FloatingButton(icon: "point.topleft.down.to.point.bottomright.curvepath", label: courseText("コース提案", "Route suggestions"), theme: store.theme) {
@@ -132,6 +144,7 @@ struct MainMapView: View {
                                     }
                                 }
                                 .overlay(Circle().stroke(coursePlanner.isPresented ? WalkingCourseStyle.accent : .clear, lineWidth: 1.5))
+                                .mapGuideTarget(.courses)
                                 .staggeredReveal(revealPhase, stage: 4)
                                 if !coursePlanner.isPresented {
                                 FloatingButton(
@@ -154,11 +167,13 @@ struct MainMapView: View {
                                     }
                                 }
                                 .disabled(coursePlanner.isPresented)
+                                .mapGuideTarget(.mapMode)
                                 .staggeredReveal(revealPhase, stage: 5)
                                 FloatingButton(icon: "square.and.arrow.up", label: "共有", theme: store.theme) {
                                     requestShare()
                                 }
                                 .disabled(coursePlanner.isPresented)
+                                .mapGuideTarget(.share)
                                 .staggeredReveal(revealPhase, stage: 6)
                                 FloatingButton(icon: "location.fill", label: "現在地", theme: store.theme) {
                                     if store.recorder.authorizationStatus == .notDetermined {
@@ -167,12 +182,14 @@ struct MainMapView: View {
                                     store.refreshCurrentLocation()
                                     recenterToken += 1
                                 }
+                                .mapGuideTarget(.location)
                                 .staggeredReveal(revealPhase, stage: 7)
                                 TransportFilterControl(
                                     visibleModes: store.visibleTransportModes,
                                     theme: store.theme,
                                     onToggle: store.toggleTransportMode
                                 )
+                                .mapGuideTarget(.transport)
                                 .staggeredReveal(revealPhase, stage: 7)
                                 }
                             }
@@ -232,6 +249,59 @@ struct MainMapView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(2)
             }
+        }
+        .accessibilityHidden(guideStep != nil)
+        .overlayPreferenceValue(MapGuideAnchorKey.self) { anchors in
+            GeometryReader { proxy in
+                let insets = proxy.safeAreaInsets
+                if let step = guideStep, guideIsReady {
+                    MapGuideOverlay(step: step,
+                        target: anchors[step].map { proxy[$0].offsetBy(dx: 0, dy: insets.top) },
+                        safeInsets: insets,
+                        contentOpacity: guideContentOpacity,
+                        japanese: courseIsJapanese, onNext: advanceMapGuide,
+                        onSkip: finishMapGuide)
+                        // Expand only the guide layer. Keep anchors and the map's layout unchanged.
+                        .frame(width: proxy.size.width, height: proxy.size.height + insets.top + insets.bottom)
+                        .offset(y: -insets.top)
+                } else if guideStep != nil {
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture { }
+                }
+            }
+        }
+        .onReceive(store.recorder.$authorizationStatus.receive(on: RunLoop.main)) { status in
+            guideAuthorizationStatus = status
+        }
+        .task(id: "\(scenePhase)-\(guideAuthorizationStatus.rawValue)-\(showsSettings)-\(String(describing: guideStep))") {
+            if guideStep == .reveal || scenePhase != .active || showsSettings { guideIsReady = false }
+            guard guideStep != nil, scenePhase == .active, !showsSettings,
+                  !store.showsWidgetRecordingSettings,
+                  store.recordingMode == .off || guideAuthorizationStatus != .notDetermined else { return }
+            // Let native permission sheets and the existing UI reveal finish first.
+            do {
+                try await Task.sleep(for: .milliseconds(guideStep == .reveal || guideStep == .stats ? 950 : 120))
+                guard !Task.isCancelled else { return }
+                guideIsReady = true
+                if !guideIsTransitioning {
+                    withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.12)) { guideContentOpacity = 1 }
+                }
+            } catch { }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .michiShowMapGuide)) { _ in
+            showsSettings = false
+            coursePlanner.close()
+            selectedPlace = nil
+            revealTask?.cancel()
+            reviewRequestTask?.cancel()
+            guideIsReady = false
+            guideTransitionTask?.cancel()
+            guideIsTransitioning = false
+            guideContentOpacity = 0
+            isUIHidden = true
+            isHidingUI = false
+            revealPhase = 0
+            guideStep = .reveal
         }
         .sheet(isPresented: $showsSettings) {
             SettingsView()
@@ -306,6 +376,9 @@ struct MainMapView: View {
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else {
                 reviewRequestTask?.cancel()
+                guideTransitionTask?.cancel()
+                guideIsTransitioning = false
+                guideContentOpacity = 1
                 return
             }
             // 移動後にアプリへ戻った場合は、古い座標を再利用せず新しい測位を待って中央へ戻す。
@@ -316,7 +389,10 @@ struct MainMapView: View {
         .onChange(of: store.reviewEligibleActiveDays) { _, _ in
             scheduleReviewIfNeeded()
         }
-        .onDisappear { reviewRequestTask?.cancel() }
+        .onDisappear {
+            reviewRequestTask?.cancel()
+            guideTransitionTask?.cancel()
+        }
     }
 
     /// Simulator previews use a deterministic Shinjuku location so screenshots
@@ -330,6 +406,52 @@ struct MainMapView: View {
     }
 
     private var courseIsJapanese: Bool { store.appLanguage.localeIdentifier.hasPrefix("ja") }
+    private func advanceMapGuide() {
+        guard let step = guideStep, !guideIsTransitioning else { return }
+        if step == .reveal {
+            guideIsReady = false
+            guideContentOpacity = 0
+            revealPhase = 0
+            toggleUIVisibility()
+            guideStep = .stats
+            return
+        }
+        if reduceMotion {
+            if let next = MapGuideStep(rawValue: step.rawValue + 1) { guideStep = next }
+            else { finishMapGuide() }
+            return
+        }
+        guideIsTransitioning = true
+        guideTransitionTask = Task { @MainActor in
+            defer { guideIsTransitioning = false }
+            withAnimation(.easeOut(duration: 0.09)) { guideContentOpacity = 0 }
+            do {
+                try await Task.sleep(for: .milliseconds(90))
+                guard !Task.isCancelled else { return }
+                guard let next = MapGuideStep(rawValue: step.rawValue + 1) else {
+                    finishMapGuide()
+                    return
+                }
+                guideStep = next
+                // Give the compact bubble one layout pass at its new location.
+                try await Task.sleep(for: .milliseconds(20))
+                withAnimation(.easeIn(duration: 0.12)) { guideContentOpacity = 1 }
+                try await Task.sleep(for: .milliseconds(120))
+            } catch { }
+        }
+    }
+
+    private func finishMapGuide() {
+        guideTransitionTask?.cancel()
+        guideIsTransitioning = false
+        revealTask?.cancel()
+        hasCompletedMapGuide = true
+        guideStep = nil
+        guideIsReady = false
+        isUIHidden = false
+        isHidingUI = false
+        revealPhase = 9
+    }
     private func courseText(_ ja: String, _ en: String) -> String { courseIsJapanese ? ja : en }
     private func generateCourses() {
         coursePlanner.generate(tracks: store.tracks, japanese: courseIsJapanese)
@@ -401,6 +523,7 @@ struct MainMapView: View {
             .foregroundStyle(store.theme.foregroundColor.opacity(0.72))
             .staggeredReveal(revealPhase, stage: 9)
         }
+        .mapGuideTarget(.period)
         .padding(.horizontal, 22)
         .padding(.top, 24)
         .padding(.bottom, 8)
@@ -487,7 +610,8 @@ struct MainMapView: View {
 
     @MainActor
     private func scheduleReviewIfNeeded() {
-        guard scenePhase == .active, scheduledReviewTrigger == nil,
+        guard guideStep == nil, hasCompletedMapGuide,
+              scenePhase == .active, scheduledReviewTrigger == nil,
               let trigger = ReviewRequestPolicy.nextEligibleTrigger(
                 activeDays: store.reviewEligibleActiveDays
               ) else { return }
@@ -503,6 +627,7 @@ struct MainMapView: View {
                 return
             }
             guard !Task.isCancelled, scenePhase == .active,
+                  guideStep == nil,
                   !showsSettings, sharePayload == nil, datePickerTarget == nil,
                   selectedPlace == nil, !coursePlanner.isPresented, !showsCourseOriginSearch,
                   store.recorder.authorizationStatus != .notDetermined,
@@ -515,6 +640,223 @@ struct MainMapView: View {
             scheduledReviewTrigger = nil
         }
     }
+}
+
+private enum MapGuideStep: Int, CaseIterable {
+    case reveal, stats, period, settings, courses, mapMode, share, location, transport, farewell
+
+    func title(_ ja: Bool) -> String {
+        switch self {
+        case .reveal: ja ? "地図をタップしてみましょう。" : "Try tapping the map."
+        case .stats: ja ? "散歩の記録を、ここで確認。" : "Your journeys at a glance."
+        case .period: ja ? "見たい期間に絞れます。" : "Choose a time period."
+        case .transport: ja ? "見たい移動だけを表示。" : "Show the journeys you want."
+        case .mapMode: ja ? "地図の楽しみ方を変えてみよう。" : "See your map differently."
+        case .courses: ja ? "次の散歩を探してみよう。" : "Find your next walk."
+        case .share: ja ? "自分の地図を、一枚の画像に。" : "Share a map that is yours."
+        case .location: ja ? "今いる場所へ戻れます。" : "Back to where you are."
+        case .settings: ja ? "設定は、いつでもここから。" : "Make it your own."
+        case .farewell: ja ? "それでは、楽しい散歩を！" : "Enjoy your next walk!"
+        }
+    }
+
+    func detail(_ ja: Bool) -> String {
+        switch self {
+        case .reveal: ja ? "ボタンや散歩の記録が表示されます。\nもう一度タップすると隠せます。" : "Reveal your controls and journey stats.\nTap again to hide them."
+        case .stats: ja ? "新しい道の数、移動距離、記録した日数が表示されます。" : "See new roads, distance travelled, and active days."
+        case .period: ja ? "期間を切り替えたり、スライダーで調整できます。日付をタップして選ぶこともできます。" : "Choose a period, adjust the slider, or tap a date."
+        case .transport: ja ? "表示する経路を切り替えます。記録する移動の設定は変わりません。" : "Filter the routes on your map without changing what gets recorded."
+        case .mapMode: ja ? "通常の地図、開拓モード、経路だけの表示を切り替えられます。" : "Switch between the full map, Explore mode, and routes only."
+        case .courses: ja ? "出発地や時間を選ぶと、まだ歩いていない道を中心にコースを提案します。" : "Choose a starting point and duration to find routes that favor streets you have not walked yet."
+        case .share: ja ? "表示中の地図や経路を画像にして共有できます。" : "Turn the map and routes on screen into an image to share."
+        case .location: ja ? "地図を動かしたあとも、このボタンで現在地を表示できます。" : "After moving around the map, tap here to return to your current location."
+        case .settings: ja ? "記録方法や地図のデザインを変更できます。「アプリの使い方」でこの案内を見返せます。" : "Change recording and map styles. Replay this guide under How to use Street Print."
+        case .farewell: ja ? "いつもの道にも、新しい発見が待っています。" : "Even familiar streets have something new to discover."
+        }
+    }
+}
+
+private struct MapGuideAnchorKey: PreferenceKey {
+    static var defaultValue: [MapGuideStep: Anchor<CGRect>] { [:] }
+    static func reduce(value: inout [MapGuideStep: Anchor<CGRect>], nextValue: () -> [MapGuideStep: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private extension View {
+    func mapGuideTarget(_ step: MapGuideStep) -> some View {
+        anchorPreference(key: MapGuideAnchorKey.self, value: .bounds) { [step: $0] }
+    }
+}
+
+private struct MapGuideOverlay: View {
+    let step: MapGuideStep
+    let target: CGRect?
+    let safeInsets: EdgeInsets
+    let contentOpacity: Double
+    let japanese: Bool
+    let onNext: () -> Void
+    let onSkip: () -> Void
+    @AccessibilityFocusState private var focusesTitle: Bool
+    @State private var cardHeight: CGFloat = 170
+
+    var body: some View {
+        GeometryReader { proxy in
+            let bounds = CGRect(origin: .zero, size: proxy.size)
+            let hole = target?.insetBy(dx: -5, dy: -5).intersection(bounds)
+            let placement = cardPlacement(size: proxy.size, target: hole)
+            ZStack {
+                if step == .reveal {
+                    Color.black.opacity(0.18)
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: onNext)
+                        .accessibilityLabel(japanese ? "地図をタップしてUIを表示" : "Tap the map to show controls")
+                        .accessibilityAddTraits(.isButton)
+                } else {
+                    Path { path in
+                        path.addRect(bounds)
+                        if let hole { path.addRoundedRect(in: hole, cornerSize: CGSize(width: 14, height: 14)) }
+                    }
+                    .fill(.black.opacity(0.54), style: FillStyle(eoFill: true))
+                    .allowsHitTesting(false)
+                    if let hole {
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(.black.opacity(0.54))
+                            .frame(width: hole.width, height: hole.height)
+                            .position(x: hole.midX, y: hole.midY)
+                            .opacity(1 - contentOpacity)
+                            .allowsHitTesting(false)
+                    }
+                    // The spotlight is visual only; controls never execute during the tour.
+                    Color.clear.contentShape(Rectangle())
+                        .onTapGesture(perform: onNext)
+                        .accessibilityLabel(japanese
+                            ? (step == .farewell ? "タップして案内を終了" : "タップして次の説明へ")
+                            : (step == .farewell ? "Tap to finish the guide" : "Tap to continue the guide"))
+                        .accessibilityAddTraits(.isButton)
+                    if let hole {
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(.white.opacity(0.94), lineWidth: 1.5)
+                            .frame(width: hole.width, height: hole.height)
+                            .position(x: hole.midX, y: hole.midY)
+                            .opacity(contentOpacity)
+                            .allowsHitTesting(false)
+                    }
+                }
+
+                if let arrow = placement.arrow {
+                    arrow.fill(Color(uiColor: .systemBackground))
+                        .opacity(contentOpacity)
+                        .allowsHitTesting(false)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    if step == .farewell {
+                        Image(systemName: "figure.walk")
+                            .font(.system(size: 25, weight: .medium))
+                            .foregroundStyle(.blue)
+                            .padding(.bottom, 6)
+                    }
+                    Text(step.title(japanese))
+                        .font(.system(size: step == .farewell ? 20 : 16, weight: .semibold))
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityFocused($focusesTitle)
+                    Text(step.detail(japanese))
+                        .font(.system(size: 12.5))
+                        .lineSpacing(2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if step != .reveal {
+                        HStack {
+                            if step != .farewell { Text("\(step.rawValue) / 8")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(japanese
+                                ? (step == .farewell ? "タップしてはじめる" : "タップして進む")
+                                : (step == .farewell ? "Tap to start" : "Tap to continue"))
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+                .padding(14)
+                .frame(width: placement.width, alignment: .leading)
+                .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 16))
+                .foregroundStyle(Color.primary)
+                .shadow(color: .black.opacity(0.14), radius: 10, y: 4)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { card in
+                    Color.clear.preference(key: MapGuideCardHeightKey.self, value: card.size.height)
+                })
+                .position(placement.center)
+                .opacity(contentOpacity)
+                .allowsHitTesting(false)
+
+                if step != .farewell { VStack {
+                    HStack {
+                        Spacer()
+                        Button(japanese ? "スキップ" : "Skip", action: onSkip)
+                            .font(.system(size: 13, weight: .semibold))
+                            .padding(.horizontal, 15).frame(minHeight: 44)
+                            .foregroundStyle(.primary)
+                            .background(.regularMaterial, in: Capsule())
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 18).padding(.top, safeInsets.top + 8)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .onPreferenceChange(MapGuideCardHeightKey.self) { if $0 > 0 { cardHeight = $0 } }
+        .onChange(of: step, initial: true) { _, _ in focusesTitle = true }
+    }
+
+    private func cardPlacement(size: CGSize, target: CGRect?) -> (width: CGFloat, center: CGPoint, arrow: Path?) {
+        let left = safeInsets.leading + 12, right = size.width - safeInsets.trailing - 12
+        let top = safeInsets.top + 12, bottom = size.height - safeInsets.bottom - 12
+        let height = max(60, cardHeight)
+        func clampY(_ y: CGFloat) -> CGFloat { min(bottom - height / 2, max(top + height / 2, y)) }
+        guard let target, step != .reveal else {
+            return (min(276, right - left), CGPoint(x: size.width / 2, y: size.height * 0.46), nil)
+        }
+        let gap: CGFloat = 12
+        let leftRoom = target.minX - gap - left
+        let rightRoom = right - target.maxX - gap
+        let width: CGFloat
+        let center: CGPoint
+        var arrow = Path()
+        if leftRoom >= 190 {
+            width = min(252, leftRoom)
+            center = CGPoint(x: target.minX - gap - width / 2, y: clampY(target.midY))
+            let y = min(center.y + height / 2 - 20, max(center.y - height / 2 + 20, target.midY))
+            arrow.addLines([CGPoint(x: center.x + width / 2 - 1, y: y - 7),
+                CGPoint(x: center.x + width / 2 + 8, y: y), CGPoint(x: center.x + width / 2 - 1, y: y + 7)])
+        } else if rightRoom >= 190 {
+            width = min(252, rightRoom)
+            center = CGPoint(x: target.maxX + gap + width / 2, y: clampY(target.midY))
+            let y = min(center.y + height / 2 - 20, max(center.y - height / 2 + 20, target.midY))
+            arrow.addLines([CGPoint(x: center.x - width / 2 + 1, y: y - 7),
+                CGPoint(x: center.x - width / 2 - 8, y: y), CGPoint(x: center.x - width / 2 + 1, y: y + 7)])
+        } else {
+            width = min(276, right - left)
+            let above = target.minY - top >= height + gap
+            center = CGPoint(x: min(right - width / 2, max(left + width / 2, target.midX)),
+                y: clampY(above ? target.minY - gap - height / 2 : target.maxY + gap + height / 2))
+            let x = min(center.x + width / 2 - 20, max(center.x - width / 2 + 20, target.midX))
+            let edge = center.y + (above ? height / 2 : -height / 2)
+            arrow.addLines([CGPoint(x: x - 7, y: edge), CGPoint(x: x, y: edge + (above ? 8 : -8)), CGPoint(x: x + 7, y: edge)])
+        }
+        arrow.closeSubpath()
+        return (width, center, arrow)
+    }
+}
+
+private struct MapGuideCardHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 private struct SharePayload: Identifiable {

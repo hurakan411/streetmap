@@ -223,6 +223,8 @@
 "好きな地図で、\n出かけよう。" = "Pick your map.\nThen head out.";
 "地図の色や雰囲気を選びましょう。\n気分に合わせて、いつでも変更できます。" = "Choose a look for your map.\nChange it anytime to suit your mood.";
 "設定へ" = "Set up";
+"画面の使い方" = "How to use the map";
+"アプリの使い方" = "How to use Street Print";
 "通った道が、\n自分だけの地図になる。" = "Your routes.\nYour own map.";
 "いつもの道も、初めての道も。\n移動の記録が、あなたの地図に。" = "Familiar streets or somewhere new.\nEvery journey adds to your map.";
 "開拓する" = "Explore";

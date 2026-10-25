@@ -197,6 +197,27 @@ struct SettingsView: View {
 
                         sectionTitle("06", "アプリについて", "ポリシーとバージョン情報")
                         VStack(spacing: 0) {
+                            Button {
+                                dismiss()
+                                NotificationCenter.default.post(name: .michiShowMapGuide, object: nil)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "questionmark.circle.fill")
+                                        .foregroundStyle(store.theme.interactionColor)
+                                        .frame(width: 24)
+                                    Text("アプリの使い方")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(store.theme.foregroundColor)
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(store.theme.interactionColor)
+                                }
+                                .padding(16)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Divider().padding(.leading, 52)
                             NavigationLink {
                                 PrivacyPolicyView(theme: store.theme)
                             } label: {
