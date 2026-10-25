@@ -1,6 +1,7 @@
 import Combine
 import CoreLocation
 import CoreMotion
+import MapKit
 import SwiftUI
 
 struct OnboardingView: View {
@@ -13,7 +14,7 @@ struct OnboardingView: View {
     @State private var hasLoadedSelections = false
     @State private var isWaitingForAuthorization = false
 
-    private let pageCount = 5
+    private let pageCount = 6
 
     var body: some View {
         ZStack {
@@ -23,11 +24,12 @@ struct OnboardingView: View {
                 header
 
                 TabView(selection: $page) {
-                    DiscoveryPage().tag(0)
-                    RecordingPage().tag(1)
-                    RecordingModeSelectionPage(selection: $selectedRecordingMode).tag(2)
-                    MovementModeSelectionPage(selection: $selectedMovementMode).tag(3)
-                    ThemeSelectionPage(selection: $selectedTheme).tag(4)
+                    DiscoveryPage(isActive: page == 0).tag(0)
+                    ExcavationPage(isActive: page == 1).tag(1)
+                    CourseDiscoveryPage(isActive: page == 2).tag(2)
+                    RecordingModeSelectionPage(selection: $selectedRecordingMode).tag(3)
+                    MovementModeSelectionPage(selection: $selectedMovementMode).tag(4)
+                    ThemeSelectionPage(selection: $selectedTheme).tag(5)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .disabled(isWaitingForAuthorization)
@@ -82,9 +84,9 @@ struct OnboardingView: View {
 
             Spacer()
 
-            if page < 2 {
+            if page < 3 {
                 Button("設定へ") {
-                    withAnimation(.snappy) { page = 2 }
+                    withAnimation(.snappy) { page = 3 }
                 }
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.black.opacity(0.46))
@@ -180,25 +182,40 @@ private struct OnboardingBackdrop: View {
 }
 
 private struct DiscoveryPage: View {
+    let isActive: Bool
     var body: some View {
         OnboardingPageLayout(
-            eyebrow: "歩いたぶんだけ、街がひらく",
-            title: "歩くほど、\n街が自分の地図になる。",
-            message: "通った道は色になり、まだ知らない道が見えてくる。\nいつもの散歩に、次の行き先を。"
+            eyebrow: nil,
+            title: "歩いた道が、\nあなたの地図に。",
+            message: "いつもの散歩も、初めての街も。\n通った道を、自動で記録します。"
         ) {
-            EditorialCityArtwork()
+            OnboardingCityScene(mode: .record, isActive: isActive)
         }
     }
 }
 
-private struct RecordingPage: View {
+private struct ExcavationPage: View {
+    let isActive: Bool
     var body: some View {
         OnboardingPageLayout(
-            eyebrow: "使い方はシンプル",
-            title: "ポケットに入れて、\n歩くだけ。",
-            message: "アプリを閉じても移動を自動記録。\nあとで開けば、今日の道が残っています。"
+            eyebrow: nil,
+            title: "この先も、\n歩いてみたくなる。",
+            message: "歩いた道のまわりから、地図が見えてきます。\n開拓モードで、まだ知らない街を探してみませんか。"
         ) {
-            AutoRecordArtwork()
+            OnboardingCityScene(mode: .excavate, isActive: isActive)
+        }
+    }
+}
+
+private struct CourseDiscoveryPage: View {
+    let isActive: Bool
+    var body: some View {
+        OnboardingPageLayout(
+            eyebrow: nil,
+            title: "次は、\nどこを歩こう。",
+            message: "出発地と散歩の時間を選ぶと、\nまだ歩いていない道を中心にコースを提案します。"
+        ) {
+            OnboardingCityScene(mode: .suggest, isActive: isActive)
         }
     }
 }
@@ -209,8 +226,8 @@ private struct RecordingModeSelectionPage: View {
     var body: some View {
         OnboardingPageLayout(
             eyebrow: "STEP 1 · 記録タイミング",
-            title: "いつ記録する？",
-            message: "使い方に合うものを選んでください。\nあとから設定で変更できます。"
+            title: "いつ記録しますか？",
+            message: "記録するタイミングを選びましょう。\nあとから設定で変更できます。"
         ) {
             VStack(spacing: 8) {
                 ForEach(RecordingMode.allCases) { mode in
@@ -236,8 +253,8 @@ private struct MovementModeSelectionPage: View {
     var body: some View {
         OnboardingPageLayout(
             eyebrow: "STEP 2 · 記録する移動",
-            title: "どこまで残す？",
-            message: "速度をもとに記録対象を絞ります。\n散歩中心なら「徒歩のみ」がおすすめです。"
+            title: "どの移動を\n記録しますか？",
+            message: "散歩だけでも、自転車や車での移動も。\n残したい移動に合わせて選べます。"
         ) {
             VStack(spacing: 8) {
                 ForEach(MovementCaptureMode.allCases) { mode in
@@ -264,8 +281,8 @@ private struct ThemeSelectionPage: View {
     var body: some View {
         OnboardingPageLayout(
             eyebrow: "STEP 3 · デザイン",
-            title: "好きな地図で、\n始めよう。",
-            message: "経路や地図の色を選べます。\nテンプレートはいつでも変更できます。"
+            title: "好きな地図で、\n出かけよう。",
+            message: "地図の色や雰囲気を選びましょう。\n気分に合わせて、いつでも変更できます。"
         ) {
             LazyVGrid(columns: columns, spacing: 9) {
                 ForEach(AppTheme.allCases) { theme in
@@ -340,12 +357,12 @@ private struct OnboardingThemeCard: View {
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .fill(theme.backgroundColor)
 
-                    OnboardingRouteShape()
-                        .stroke(
-                            theme.routeColor,
-                            style: StrokeStyle(lineWidth: 2.2 * theme.lineScale, lineCap: .round, lineJoin: .round)
-                        )
-                        .padding(10)
+                    Canvas { context, size in
+                        OnboardingCityGeometry.drawMap(in: &context, size: size, theme: theme)
+                        context.stroke(OnboardingCityGeometry.path(OnboardingCityGeometry.history, size),
+                            with: .color(theme.routeColor), style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 15))
 
                     if isSelected {
                         VStack {
@@ -367,7 +384,8 @@ private struct OnboardingThemeCard: View {
                 Text(LocalizedStringKey(theme.name))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(OnboardingPalette.ink)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .frame(height: 28, alignment: .topLeading)
             }
             .padding(7)
             .background(OnboardingPalette.white, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
@@ -447,6 +465,218 @@ private struct PermissionPage: View {
         case .notDetermined: "記録開始時に確認します"
         @unknown default: "記録開始時に確認します"
         }
+    }
+}
+
+/// One local, deterministic city shared by the three stories and theme previews.
+/// Route vertices are also street vertices, so the moving dot never cuts across a block.
+private enum OnboardingCityGeometry {
+    static let history: [CGPoint] = [
+        .init(x: 0.08, y: 0.84), .init(x: 0.27, y: 0.77),
+        .init(x: 0.38, y: 0.63), .init(x: 0.31, y: 0.45),
+        .init(x: 0.49, y: 0.36), .init(x: 0.60, y: 0.18), .init(x: 0.79, y: 0.11)
+    ]
+    static let proposal: [CGPoint] = [
+        .init(x: 0.38, y: 0.63), .init(x: 0.61, y: 0.68), .init(x: 0.76, y: 0.50),
+        .init(x: 0.70, y: 0.30), .init(x: 0.49, y: 0.36), .init(x: 0.31, y: 0.45),
+        .init(x: 0.38, y: 0.63)
+    ]
+    static let streets: [[CGPoint]] = [history, proposal,
+        [.init(x: -0.1, y: 0.58), .init(x: 0.31, y: 0.45), .init(x: 0.19, y: 0.19), .init(x: 0.25, y: -0.1)],
+        [.init(x: -0.1, y: 0.31), .init(x: 0.19, y: 0.19), .init(x: 0.49, y: 0.36), .init(x: 0.60, y: 0.50), .init(x: 1.1, y: 0.57)],
+        [.init(x: 0.27, y: 0.77), .init(x: 0.49, y: 0.88), .init(x: 0.61, y: 0.68), .init(x: 0.60, y: 0.50), .init(x: 0.70, y: 0.30), .init(x: 0.79, y: 0.11), .init(x: 0.78, y: -0.1)],
+        [.init(x: -0.1, y: 0.94), .init(x: 0.08, y: 0.84), .init(x: 0.14, y: 0.66), .init(x: 0.38, y: 0.63), .init(x: 0.60, y: 0.50)],
+        [.init(x: 0.49, y: 0.88), .init(x: 0.85, y: 0.91), .init(x: 1.1, y: 0.80)],
+        [.init(x: 0.19, y: 0.19), .init(x: 0.43, y: 0.09), .init(x: 0.60, y: 0.18), .init(x: 0.70, y: 0.30), .init(x: 1.1, y: 0.20)]
+    ]
+
+    static func path(_ points: [CGPoint], _ size: CGSize) -> Path {
+        Path { $0.addLines(points.map { CGPoint(x: $0.x * size.width, y: $0.y * size.height) }) }
+    }
+
+    static func head(_ progress: CGFloat, size: CGSize) -> CGPoint {
+        let points = history.map { CGPoint(x: $0.x * size.width, y: $0.y * size.height) }
+        let lengths = zip(points, points.dropFirst()).map { hypot($1.x - $0.x, $1.y - $0.y) }
+        var remaining = lengths.reduce(0, +) * min(1, max(0, progress))
+        for i in lengths.indices {
+            if remaining <= lengths[i] || i == lengths.count - 1 {
+                let t = min(1, remaining / max(0.001, lengths[i]))
+                return CGPoint(x: points[i].x + (points[i + 1].x - points[i].x) * t,
+                    y: points[i].y + (points[i + 1].y - points[i].y) * t)
+            }
+            remaining -= lengths[i]
+        }
+        return points[0]
+    }
+
+    static func drawMap(in context: inout GraphicsContext, size: CGSize, theme: AppTheme = .editorialGlass) {
+        let dark = theme == .midnightPulse
+        context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(theme.backgroundColor))
+        let river = Path { p in
+            p.move(to: .init(x: size.width * 0.98, y: -20))
+            p.addCurve(to: .init(x: size.width * 0.91, y: size.height + 20),
+                control1: .init(x: size.width * 0.80, y: size.height * 0.35),
+                control2: .init(x: size.width * 1.02, y: size.height * 0.55))
+        }
+        context.stroke(river, with: .color(dark ? Color(red: 0.08, green: 0.20, blue: 0.29) : Color(red: 0.70, green: 0.84, blue: 0.88)), lineWidth: size.width * 0.055)
+        let parks: [[CGPoint]] = [
+            [.init(x: 0.40, y: 0.43), .init(x: 0.48, y: 0.40), .init(x: 0.54, y: 0.49), .init(x: 0.43, y: 0.55)],
+            [.init(x: 0.65, y: 0.73), .init(x: 0.77, y: 0.59), .init(x: 0.83, y: 0.83), .init(x: 0.61, y: 0.83)]
+        ]
+        for park in parks {
+            var p = path(park, size); p.closeSubpath()
+            context.fill(p, with: .color(dark ? Color(red: 0.08, green: 0.23, blue: 0.20) : Color(red: 0.80, green: 0.86, blue: 0.72)))
+        }
+        // Fine parcel lanes sit under the major roads; no decorative building objects.
+        for row in 0..<12 {
+            let y = CGFloat(row) / 11
+            let lane = path([.init(x: 0, y: y + 0.08), .init(x: 1, y: y - 0.13)], size)
+            context.stroke(lane, with: .color(dark ? .white.opacity(0.07) : .black.opacity(0.065)), lineWidth: 1)
+        }
+        for col in 0..<13 {
+            let x = CGFloat(col) / 12
+            let lane = path([.init(x: x - 0.12, y: 0), .init(x: x + 0.15, y: 1)], size)
+            context.stroke(lane, with: .color(dark ? .white.opacity(0.07) : .black.opacity(0.065)), lineWidth: 1)
+        }
+        for street in streets {
+            let road = path(street, size)
+            context.stroke(road, with: .color(dark ? .white.opacity(0.12) : .black.opacity(0.10)),
+                style: StrokeStyle(lineWidth: size.width * 0.024, lineCap: .round, lineJoin: .round))
+            context.stroke(road, with: .color(dark ? Color(red: 0.16, green: 0.23, blue: 0.32) : .white),
+                style: StrokeStyle(lineWidth: size.width * 0.017, lineCap: .round, lineJoin: .round))
+        }
+    }
+}
+
+private enum OnboardingStoryMode { case record, excavate, suggest }
+
+private struct OnboardingCityScene: View {
+    let mode: OnboardingStoryMode
+    let isActive: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var startedAt = Date()
+    @State private var paper: CGImage?
+    @State private var finished = false
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isActive || reduceMotion || finished)) { timeline in
+            // Play once, hold the finished map, and restart only on page entry.
+            let elapsed = timeline.date.timeIntervalSince(startedAt)
+            let progress = mode == .excavate && paper == nil ? CGFloat(0)
+                : (reduceMotion || finished ? CGFloat(1) : CGFloat(min(1, max(0, (elapsed - 0.35) / 3.6))))
+            let eased = progress * progress * (3 - 2 * progress)
+            ZStack(alignment: .bottomLeading) {
+                Canvas { context, size in
+                    OnboardingCityGeometry.drawMap(in: &context, size: size)
+                    let history = OnboardingCityGeometry.path(OnboardingCityGeometry.history, size)
+                    if mode != .excavate {
+                        let visible = history.trimmedPath(from: 0, to: mode == .record ? eased : 1)
+                        context.stroke(visible, with: .color(.white), style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                        context.stroke(visible, with: .color(OnboardingPalette.blue), style: StrokeStyle(lineWidth: 3.6, lineCap: .round, lineJoin: .round))
+                    }
+                    if mode == .suggest {
+                        let proposed = OnboardingCityGeometry.path(OnboardingCityGeometry.proposal, size).trimmedPath(from: 0, to: eased)
+                        context.stroke(proposed, with: .color(.white), style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round))
+                        context.stroke(proposed, with: .color(Color(red: 1, green: 0.35, blue: 0.16)),
+                            style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    }
+                    if mode == .excavate {
+                        // Production renderer provides the final fibrous edge and cast shadow.
+                        if let paper {
+                            context.draw(Image(decorative: paper, scale: 1), in: CGRect(origin: .zero, size: size))
+                        }
+                        // A temporary cover reveals the cached cutout along the travelled path.
+                        context.drawLayer { cover in
+                            cover.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.804, green: 0.788, blue: 0.761)))
+                            if let surface = UIImage(named: "TornPaperSurface") {
+                                cover.opacity = 0.32
+                                cover.draw(Image(uiImage: surface), in: CGRect(origin: .zero, size: size))
+                                cover.opacity = 1
+                            }
+                            cover.blendMode = .destinationOut
+                            cover.stroke(history.trimmedPath(from: 0, to: eased), with: .color(.white),
+                                style: StrokeStyle(lineWidth: size.width * 0.38, lineCap: .round, lineJoin: .round))
+                            // Fade the temporary sheet completely at the end; keep only real paper.
+                            if eased > 0.85 {
+                                cover.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white.opacity(Double((eased - 0.85) / 0.15))))
+                            }
+                        }
+                        // No pre-drawn route: reveal only the travelled portion,
+                        // in sync with the opening in the paper above it.
+                        if eased > 0 {
+                            let travelled = history.trimmedPath(from: 0, to: eased)
+                            context.stroke(travelled, with: .color(.white),
+                                style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+                            context.stroke(travelled, with: .color(OnboardingPalette.blue),
+                                style: StrokeStyle(lineWidth: 3.6, lineCap: .round, lineJoin: .round))
+                        }
+                    }
+                    if mode != .excavate || eased > 0.02 {
+                        let head = mode == .suggest
+                            ? CGPoint(x: size.width * 0.38, y: size.height * 0.63)
+                            : OnboardingCityGeometry.head(eased, size: size)
+                        context.fill(Path(ellipseIn: CGRect(x: head.x - 7, y: head.y - 7, width: 14, height: 14)), with: .color(.white))
+                        context.fill(Path(ellipseIn: CGRect(x: head.x - 4.5, y: head.y - 4.5, width: 9, height: 9)), with: .color(OnboardingPalette.blue))
+                    }
+                }
+                if mode == .record {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(Double(eased) * 2.4, format: .number.precision(.fractionLength(1)))
+                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                        Text("km").font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(OnboardingPalette.blue)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 9)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    .padding(14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
+                if mode == .suggest {
+                    HStack(spacing: 10) {
+                        Image(systemName: "figure.walk")
+                            .foregroundStyle(Color(red: 1, green: 0.35, blue: 0.16))
+                        Text("30分の散歩").font(.system(size: 12, weight: .semibold))
+                        Spacer()
+                        Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(13)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .padding(14)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 28))
+            .overlay(RoundedRectangle(cornerRadius: 28).stroke(.black.opacity(0.06), lineWidth: 1))
+        }
+        .padding(.vertical, 8)
+        .accessibilityHidden(true)
+        .onChange(of: isActive) { _, active in if active { finished = false; startedAt = Date() } }
+        .task(id: "\(isActive)-\(paper != nil)") {
+            guard isActive, mode != .excavate || paper != nil else { return }
+            do {
+                try await Task.sleep(for: .seconds(4.2))
+                finished = true
+            } catch { /* Page changed: do not finish the next animation. */ }
+        }
+        .task {
+            guard mode == .excavate else { return }
+            // Render once off the UI actor, not on every animation frame.
+            paper = await Task.detached(priority: .userInitiated) { Self.makePaper() }.value
+            if isActive { startedAt = Date() }
+        }
+    }
+
+    nonisolated private static func makePaper() -> CGImage? {
+        let z = 14
+        let center = MKMapPoint(CLLocationCoordinate2D(latitude: 35.69, longitude: 139.70))
+        let side = MKMapSize.world.width / pow(2, Double(z))
+        let x = Int(center.x / side), y = Int(center.y / side)
+        let points = OnboardingCityGeometry.history.map { MKMapPoint(x: (Double(x) + $0.x) * side, y: (Double(y) + $0.y) * side) }
+        let segments = zip(points, points.dropFirst()).map { TornPaperRenderer.Segment(start: $0, end: $1) }
+        let material = UIImage(named: "TornPaperSurface")?.cgImage.flatMap { PaperMaterial(image: $0) }
+        let renderer = TornPaperRenderer(segments: segments, darkPaper: false, material: material)
+        return renderer.render(at: MKTileOverlayPath(x: x, y: y, z: z, contentScaleFactor: 2), screenPointsPerTileUnit: 1.4)
     }
 }
 
@@ -1856,26 +2086,32 @@ private struct PermissionStateChip: View {
 }
 
 private struct OnboardingPageLayout<Artwork: View>: View {
-    let eyebrow: String
+    let eyebrow: String?
     let title: String
     let message: String
     @ViewBuilder let artwork: Artwork
 
     var body: some View {
+        GeometryReader { proxy in
+        ScrollView {
         VStack(spacing: 0) {
             Spacer(minLength: 6)
 
             artwork
-                .frame(maxWidth: 370)
-                .frame(height: 300)
+                .frame(maxWidth: eyebrow == nil ? 420 : 370)
+                .frame(height: eyebrow == nil
+                    ? min(360, max(240, proxy.size.height * 0.60))
+                    : min(300, max(220, proxy.size.height * 0.52)))
 
             VStack(alignment: .leading, spacing: 10) {
-                Text(LocalizedStringKey(eyebrow))
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(OnboardingPalette.blue)
+                if let eyebrow {
+                    Text(LocalizedStringKey(eyebrow))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(OnboardingPalette.blue)
+                }
 
                 Text(LocalizedStringKey(title))
-                    .font(.system(size: 35, weight: .bold))
+                    .font(.system(size: proxy.size.width < 350 ? 30 : 34, weight: .bold))
                     .tracking(-1.25)
                     .multilineTextAlignment(.leading)
                     .lineSpacing(1)
@@ -1888,11 +2124,15 @@ private struct OnboardingPageLayout<Artwork: View>: View {
                     .lineSpacing(4)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 8)
+            .padding(.top, eyebrow == nil ? 16 : 8)
 
             Spacer(minLength: 8)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, eyebrow == nil ? 20 : 24)
+        .frame(minHeight: proxy.size.height)
+        }
+        .scrollIndicators(.hidden)
+        }
     }
 }
 

@@ -124,13 +124,9 @@ final class AppStore: ObservableObject {
         // 新宿駅を中心に毎回同じルート群を表示する。
         let retainedSimulatorTracks = savedTracks.filter { !SampleHistory.isShinjukuPreviewSample($0) }
         tracks = retainedSimulatorTracks + SampleHistory.makeShinjuku()
-        #elseif DEBUG
-        // Debug実機では、起動直後から地図・頻度・Statsを確認できるよう
-        // 過去の直線サンプルを除き、道路補正対象の後楽園サンプルを一度だけ追加します。
-        let retainedTracks = savedTracks.filter { !SampleHistory.isLegacyStraightSample($0) }
-        let shouldSeedSamples = !UserDefaults.standard.bool(forKey: "debugRoadAlignedKorakuenSamplesV2")
-        tracks = shouldSeedSamples ? retainedTracks + SampleHistory.make() : retainedTracks
         #else
+        // Physical Debug installs must preserve real history just like Release.
+        // Demo routes are seeded only in the simulator.
         tracks = savedTracks
         #endif
         let savedTheme = UserDefaults.standard.string(forKey: "selectedTheme") ?? ""
@@ -169,14 +165,6 @@ final class AppStore: ObservableObject {
         #if targetEnvironment(simulator)
         historyStore.save(tracks)
         latestLocation = SampleHistory.shinjukuLocation
-        #endif
-        #if DEBUG
-        #if !targetEnvironment(simulator)
-        if shouldSeedSamples {
-            UserDefaults.standard.set(true, forKey: "debugRoadAlignedKorakuenSamplesV2")
-            historyStore.save(tracks)
-        }
-        #endif
         #endif
 
         recorder.onLivePointsChanged = { [weak self] points in
