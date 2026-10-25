@@ -10,6 +10,11 @@ struct MichiApp: App {
     // 新しいオンボーディングを既存の開発端末でも一度だけ表示する。
     @AppStorage("hasCompletedOnboardingV2") private var hasCompletedOnboarding = false
 
+    init() {
+        // Initialize before onboarding; its completion must never enqueue a review.
+        ReviewRequestPolicy.beginLaunch()
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {

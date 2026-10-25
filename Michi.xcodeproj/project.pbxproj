@@ -10,6 +10,8 @@
 		053069730E7147EC112CEDAD /* RoadMatchingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CADC4594EECFBB077240122D /* RoadMatchingService.swift */; };
 		0849F113BD5801BA1C66BACB /* WalkModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0DC77CBA103B5BB2A77F6FB /* WalkModels.swift */; };
 		0A04EA71715DF96518FFF168 /* StreetPrintWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D3C333960E25EC40744E3DCE /* StreetPrintWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		12870A5974C6537D7DCF8602 /* RetainedWalkingCourse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C94622D160FC731BEAEFB4F /* RetainedWalkingCourse.swift */; };
+		13074B3E20557635C083E593 /* WalkingCourseControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4D5C4F6520073AAD7CE2D6E /* WalkingCourseControls.swift */; };
 		1378D5822696C6D47ECD95DF /* ShareCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1558F3304C6E314674A94D4D /* ShareCardView.swift */; };
 		1AA079CCE2FE5590DC70F977 /* LocationRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCD39B53E0F7E12B7E765318 /* LocationRecorder.swift */; };
 		1BE50E6FE9DE7CE6A4E8098E /* MapPerformanceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A784A84FB7285D7523AF84 /* MapPerformanceDiagnostics.swift */; };
@@ -22,18 +24,23 @@
 		4210E3A9A45959FB09FC7F1C /* RecordingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2D491063582B04EF4B45001 /* RecordingSettings.swift */; };
 		43F7068690BEE146259D5D0E /* RouteGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = E18EA50F0ABD5EE2416E32A0 /* RouteGeometry.swift */; };
 		455D29A91130BD09834CAD98 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = ED827CF135CE9748DC37CE34 /* Localizable.strings */; };
+		567109F29E4EA850052E3A23 /* ReviewRequestPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDFCEF277E54C557E9F7C652 /* ReviewRequestPolicy.swift */; };
 		7467E5D9FF05113EC6AFCE9A /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A48700752701B289DFFCD7A /* SettingsView.swift */; };
 		7A31ABE531E6036C95B0413F /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0FBDA438BFCC39EDC4E3D251 /* InfoPlist.strings */; };
 		7B98F3740DD456849E9561BC /* MidnightHexMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22777A4654A01F099FCDAB1D /* MidnightHexMask.swift */; };
 		8251C6DDD5240B565C112C40 /* RecordedDistanceCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56DD4DF010E1EF09EF28EDA2 /* RecordedDistanceCalculator.swift */; };
+		82C3D63A84384D781E38B722 /* WalkingCoursePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 175915DF44F7E555F84E7270 /* WalkingCoursePlanner.swift */; };
 		8DBAAF51A8D20380118EF613 /* StreetPrintRecordingWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3938B862590621D50C393928 /* StreetPrintRecordingWidget.swift */; };
 		9AC250B175CDA1B119F63450 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D241517DC8BD4EE41A0D05F2 /* PrivacyInfo.xcprivacy */; };
+		9B74139206A2CF2B144D08B5 /* Info 2.plist in Resources */ = {isa = PBXBuildFile; fileRef = AEC0607A20A0893FF678D4EE /* Info 2.plist */; };
 		9CC64042FD2DB5B4C71C38D1 /* RouteRenderPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 585B10BBAC19268F9D65CE9E /* RouteRenderPlan.swift */; };
 		9FAC2169DAF07425AAFE18FF /* MainMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3578FE2AA6ADFA62E1E793A6 /* MainMapView.swift */; };
 		B0FB0F18A791F4D29C1C6CB0 /* RecordingWidgetIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A03B69B9BE8D144D668D5448 /* RecordingWidgetIntents.swift */; };
 		B33F567C4B15E3096BA96BEE /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF7E98E3C9BC7745155D38F /* AppStore.swift */; };
+		C0249C54856FCBC6AD1220A4 /* WalkingCourseGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FE2376BF05F52E8F42A2532 /* WalkingCourseGeometry.swift */; };
 		C36B314010EBB4FFB2528304 /* ShareSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EB999A739A94D0E9CD6CECD /* ShareSheet.swift */; };
 		C55C2C703D75F607873D596F /* MapCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BE591074EC6CA0CDF4AFB33 /* MapCanvasView.swift */; };
+		C6A80A4DB36E686B7E3C814B /* WalkingCourseDirectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C9A541C4D76D2A64F171FC7 /* WalkingCourseDirectionView.swift */; };
 		D1E84D8B43E1B4FF9D62FC71 /* LocalHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657069DB8E673765FECCC9B4 /* LocalHistoryStore.swift */; };
 		E0E91C59A9BD2701AA429004 /* TornPaperRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8D66F784C9230732F9C45E9 /* TornPaperRenderer.swift */; };
 		F6E72CE2C2F175A56B008AC4 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3964AEF41C1BE838A3278400 /* OnboardingView.swift */; };
@@ -67,11 +74,14 @@
 /* Begin PBXFileReference section */
 		0BC89334E103B96091420BBC /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		0BE591074EC6CA0CDF4AFB33 /* MapCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCanvasView.swift; sourceTree = "<group>"; };
+		0C94622D160FC731BEAEFB4F /* RetainedWalkingCourse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetainedWalkingCourse.swift; sourceTree = "<group>"; };
 		0D4640789E56A8075C913221 /* RecordingProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingProcessor.swift; sourceTree = "<group>"; };
 		1558F3304C6E314674A94D4D /* ShareCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardView.swift; sourceTree = "<group>"; };
+		175915DF44F7E555F84E7270 /* WalkingCoursePlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkingCoursePlanner.swift; sourceTree = "<group>"; };
 		1EB999A739A94D0E9CD6CECD /* ShareSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareSheet.swift; sourceTree = "<group>"; };
 		1EF7E98E3C9BC7745155D38F /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		1F53060CF386BB2C71661B95 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		1FE2376BF05F52E8F42A2532 /* WalkingCourseGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkingCourseGeometry.swift; sourceTree = "<group>"; };
 		22777A4654A01F099FCDAB1D /* MidnightHexMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MidnightHexMask.swift; sourceTree = "<group>"; };
 		3578FE2AA6ADFA62E1E793A6 /* MainMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMapView.swift; sourceTree = "<group>"; };
 		3938B862590621D50C393928 /* StreetPrintRecordingWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreetPrintRecordingWidget.swift; sourceTree = "<group>"; };
@@ -79,20 +89,24 @@
 		4A48700752701B289DFFCD7A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		56DD4DF010E1EF09EF28EDA2 /* RecordedDistanceCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordedDistanceCalculator.swift; sourceTree = "<group>"; };
 		585B10BBAC19268F9D65CE9E /* RouteRenderPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRenderPlan.swift; sourceTree = "<group>"; };
+		5C9A541C4D76D2A64F171FC7 /* WalkingCourseDirectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkingCourseDirectionView.swift; sourceTree = "<group>"; };
 		657069DB8E673765FECCC9B4 /* LocalHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHistoryStore.swift; sourceTree = "<group>"; };
 		691B464DB56CEF35AF377712 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
 		83A784A84FB7285D7523AF84 /* MapPerformanceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPerformanceDiagnostics.swift; sourceTree = "<group>"; };
 		857B940E40EB422DE18C0C80 /* MichiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MichiApp.swift; sourceTree = "<group>"; };
 		A03B69B9BE8D144D668D5448 /* RecordingWidgetIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingWidgetIntents.swift; sourceTree = "<group>"; };
 		A2D491063582B04EF4B45001 /* RecordingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSettings.swift; sourceTree = "<group>"; };
+		A4D5C4F6520073AAD7CE2D6E /* WalkingCourseControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkingCourseControls.swift; sourceTree = "<group>"; };
+		AEC0607A20A0893FF678D4EE /* Info 2.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info 2.plist"; sourceTree = "<group>"; };
 		B608DAD8450067E54ADD73E0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C46D88ED8A460B31BBD91A20 /* Michi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Michi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8AE2F32DEF27184990B9921 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		CADC4594EECFBB077240122D /* RoadMatchingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoadMatchingService.swift; sourceTree = "<group>"; };
-		D241517DC8BD4EE41A0D05F2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		D3C333960E25EC40744E3DCE /* StreetPrintWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = StreetPrintWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D241517DC8BD4EE41A0D05F2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		D3C333960E25EC40744E3DCE /* StreetPrintWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = StreetPrintWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		E0DC77CBA103B5BB2A77F6FB /* WalkModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkModels.swift; sourceTree = "<group>"; };
 		E18EA50F0ABD5EE2416E32A0 /* RouteGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteGeometry.swift; sourceTree = "<group>"; };
+		EDFCEF277E54C557E9F7C652 /* ReviewRequestPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewRequestPolicy.swift; sourceTree = "<group>"; };
 		F8D66F784C9230732F9C45E9 /* TornPaperRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TornPaperRenderer.swift; sourceTree = "<group>"; };
 		FCD39B53E0F7E12B7E765318 /* LocationRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationRecorder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -113,8 +127,12 @@
 				FCD39B53E0F7E12B7E765318 /* LocationRecorder.swift */,
 				56DD4DF010E1EF09EF28EDA2 /* RecordedDistanceCalculator.swift */,
 				0D4640789E56A8075C913221 /* RecordingProcessor.swift */,
+				0C94622D160FC731BEAEFB4F /* RetainedWalkingCourse.swift */,
+				EDFCEF277E54C557E9F7C652 /* ReviewRequestPolicy.swift */,
 				CADC4594EECFBB077240122D /* RoadMatchingService.swift */,
 				E18EA50F0ABD5EE2416E32A0 /* RouteGeometry.swift */,
+				1FE2376BF05F52E8F42A2532 /* WalkingCourseGeometry.swift */,
+				175915DF44F7E555F84E7270 /* WalkingCoursePlanner.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -157,6 +175,8 @@
 				1558F3304C6E314674A94D4D /* ShareCardView.swift */,
 				1EB999A739A94D0E9CD6CECD /* ShareSheet.swift */,
 				F8D66F784C9230732F9C45E9 /* TornPaperRenderer.swift */,
+				A4D5C4F6520073AAD7CE2D6E /* WalkingCourseControls.swift */,
+				5C9A541C4D76D2A64F171FC7 /* WalkingCourseDirectionView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -214,6 +234,7 @@
 			isa = PBXGroup;
 			children = (
 				B608DAD8450067E54ADD73E0 /* Assets.xcassets */,
+				AEC0607A20A0893FF678D4EE /* Info 2.plist */,
 				D241517DC8BD4EE41A0D05F2 /* PrivacyInfo.xcprivacy */,
 				0FBDA438BFCC39EDC4E3D251 /* InfoPlist.strings */,
 				ED827CF135CE9748DC37CE34 /* Localizable.strings */,
@@ -269,7 +290,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2660;
+				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					1CB11F1524223376D9182C5F = {
 						DevelopmentTeam = 9927M765H2;
@@ -308,6 +329,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F797CB3480376E6CD45D3D5A /* Assets.xcassets in Resources */,
+				9B74139206A2CF2B144D08B5 /* Info 2.plist in Resources */,
 				7A31ABE531E6036C95B0413F /* InfoPlist.strings in Resources */,
 				455D29A91130BD09834CAD98 /* Localizable.strings in Resources */,
 				1C7A575D3B6FEAA03B9A59E9 /* PrivacyInfo.xcprivacy in Resources */,
@@ -343,6 +365,8 @@
 				1F9FE54507AE41B9DBEF80CC /* RecordingProcessor.swift in Sources */,
 				34914DA087A58C406E874378 /* RecordingSettings.swift in Sources */,
 				B0FB0F18A791F4D29C1C6CB0 /* RecordingWidgetIntents.swift in Sources */,
+				12870A5974C6537D7DCF8602 /* RetainedWalkingCourse.swift in Sources */,
+				567109F29E4EA850052E3A23 /* ReviewRequestPolicy.swift in Sources */,
 				053069730E7147EC112CEDAD /* RoadMatchingService.swift in Sources */,
 				43F7068690BEE146259D5D0E /* RouteGeometry.swift in Sources */,
 				9CC64042FD2DB5B4C71C38D1 /* RouteRenderPlan.swift in Sources */,
@@ -351,6 +375,10 @@
 				C36B314010EBB4FFB2528304 /* ShareSheet.swift in Sources */,
 				E0E91C59A9BD2701AA429004 /* TornPaperRenderer.swift in Sources */,
 				0849F113BD5801BA1C66BACB /* WalkModels.swift in Sources */,
+				13074B3E20557635C083E593 /* WalkingCourseControls.swift in Sources */,
+				C6A80A4DB36E686B7E3C814B /* WalkingCourseDirectionView.swift in Sources */,
+				C0249C54856FCBC6AD1220A4 /* WalkingCourseGeometry.swift in Sources */,
+				82C3D63A84384D781E38B722 /* WalkingCoursePlanner.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -439,8 +467,9 @@
 				PRODUCT_BUNDLE_IDENTIFIER = jp.michi.walkmap;
 				PRODUCT_NAME = Michi;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -470,7 +499,6 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -507,7 +535,6 @@
 				DEVELOPMENT_TEAM = 9927M765H2;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -529,7 +556,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -551,8 +577,9 @@
 				PRODUCT_BUNDLE_IDENTIFIER = jp.michi.walkmap;
 				PRODUCT_NAME = Michi;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -561,7 +588,6 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -598,7 +624,6 @@
 				DEVELOPMENT_TEAM = 9927M765H2;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -613,7 +638,6 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;

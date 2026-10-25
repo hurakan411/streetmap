@@ -1,4 +1,5 @@
 import CoreLocation
+import MapKit
 import StoreKit
 import SwiftUI
 
@@ -23,6 +24,9 @@ struct MainMapView: View {
     @State private var sharesAfterMapSnapshot = false
     @State private var datePickerTarget: DatePickerTarget?
     @State private var selectedPlace: MapPlaceDetails?
+    @StateObject private var coursePlanner = WalkingCoursePlanner()
+    @State private var showsCourseOriginSearch = false
+    @State private var previousCourseDisplayMode: MapDisplayMode?
 
     var body: some View {
         ZStack {
@@ -39,7 +43,7 @@ struct MainMapView: View {
                 targetLocation: mapTargetLocation,
                 reservesBottomControlsSpace: !isUIHidden,
                 onMapTap: {
-                    toggleUIVisibility()
+                    if !coursePlanner.isPresented { toggleUIVisibility() }
                 },
                 onPlaceSelected: { place in
                     withAnimation(.snappy(duration: 0.24)) {
@@ -64,6 +68,20 @@ struct MainMapView: View {
                     sharesAfterMapSnapshot = false
                     guard let image else { return }
                     makeShareImage(mapImage: image)
+                },
+                planningCourse: coursePlanner.isPresented ? coursePlanner.selectedCourse : coursePlanner.retainedCourse,
+                planningOrigin: coursePlanner.isPresented ? coursePlanner.origin : nil,
+                isPlanningCourse: coursePlanner.isPresented,
+                planningTravelMode: coursePlanner.travelMode,
+                courseCameraRevision: coursePlanner.cameraRevision,
+                onCourseOriginSelected: { coordinate in
+                    coursePlanner.setOrigin(coordinate, name: courseText("指定地点", "Selected point"))
+                },
+                courseDirection: coursePlanner.direction,
+                courseDirectionRadius: coursePlanner.travelMode.directionRadius(minutes: coursePlanner.minutes),
+                courseDirectionJapanese: courseIsJapanese,
+                onCourseDirectionChanged: { bearing, opening in
+                    coursePlanner.setDirection(bearing: bearing, opening: opening)
                 }
             )
             .ignoresSafeArea()
@@ -74,7 +92,7 @@ struct MainMapView: View {
                     .allowsHitTesting(false)
             }
 
-            if !isUIHidden && store.displayRevision > 0 && store.allWeightedSegments.isEmpty && store.livePoints.isEmpty && revealPhase >= 3 {
+            if !coursePlanner.isPresented && coursePlanner.retainedCourse == nil && !isUIHidden && store.displayRevision > 0 && store.allWeightedSegments.isEmpty && store.livePoints.isEmpty && revealPhase >= 3 {
                 EmptyRouteView(theme: store.theme, hasHistory: !store.tracks.isEmpty)
                     .transition(.opacity)
             }
@@ -83,7 +101,9 @@ struct MainMapView: View {
                 ZStack {
                     VStack {
                         HStack {
-                            VerticalStatsPanel(stats: animatedStats, theme: store.theme, revealPhase: revealPhase)
+                            if !coursePlanner.isPresented {
+                                VerticalStatsPanel(stats: animatedStats, theme: store.theme, revealPhase: revealPhase)
+                            }
                             Spacer()
                         }
                         Spacer()
@@ -96,12 +116,26 @@ struct MainMapView: View {
                         HStack {
                             Spacer()
                             VStack(alignment: .trailing, spacing: 11) {
+                                if !coursePlanner.isPresented {
                                 FloatingButton(icon: "gearshape.fill", label: "設定", theme: store.theme) {
                                     showsSettings = true
                                 }
                                 .staggeredReveal(revealPhase, stage: 4)
+                                }
+                                FloatingButton(icon: "point.topleft.down.to.point.bottomright.curvepath", label: courseText("コース提案", "Route suggestions"), theme: store.theme) {
+                                    if coursePlanner.isPresented { coursePlanner.close() }
+                                    else {
+                                        selectedPlace = nil
+                                        previousCourseDisplayMode = store.displayMode
+                                        store.displayMode = .map
+                                        coursePlanner.open(at: mapTargetLocation?.coordinate, name: courseText("現在地", "Current location"))
+                                    }
+                                }
+                                .overlay(Circle().stroke(coursePlanner.isPresented ? WalkingCourseStyle.accent : .clear, lineWidth: 1.5))
+                                .staggeredReveal(revealPhase, stage: 4)
+                                if !coursePlanner.isPresented {
                                 FloatingButton(
-                                    icon: store.displayMode == .map ? "point.bottomleft.forward.to.point.topright.scurvepath" : "map",
+                                    icon: "square.3.layers.3d",
                                     label: displayModeLabel,
                                     theme: store.theme
                                 ) {
@@ -109,10 +143,22 @@ struct MainMapView: View {
                                         cycleDisplayMode()
                                     }
                                 }
+                                .contextMenu {
+                                    ForEach(MapDisplayMode.allCases, id: \.rawValue) { mode in
+                                        Button {
+                                            sharesAfterRemix = false
+                                            store.displayMode = mode
+                                        } label: {
+                                            Label(mapModeName(mode), systemImage: store.displayMode == mode ? "checkmark" : mapModeSymbol(mode))
+                                        }
+                                    }
+                                }
+                                .disabled(coursePlanner.isPresented)
                                 .staggeredReveal(revealPhase, stage: 5)
                                 FloatingButton(icon: "square.and.arrow.up", label: "共有", theme: store.theme) {
                                     requestShare()
                                 }
+                                .disabled(coursePlanner.isPresented)
                                 .staggeredReveal(revealPhase, stage: 6)
                                 FloatingButton(icon: "location.fill", label: "現在地", theme: store.theme) {
                                     if store.recorder.authorizationStatus == .notDetermined {
@@ -128,15 +174,44 @@ struct MainMapView: View {
                                     onToggle: store.toggleTransportMode
                                 )
                                 .staggeredReveal(revealPhase, stage: 7)
+                                }
                             }
                         }
                         .padding(.trailing, 18)
-                        .padding(.bottom, 112)
+                        .padding(.bottom, coursePlanner.isPresented ? 270 : 112)
                     }
 
                     VStack {
                         Spacer()
-                        bottomControls
+                        if coursePlanner.isPresented {
+                            VStack(spacing: 10) {
+                                WalkingCourseHeader(planner: coursePlanner, theme: store.theme, japanese: courseIsJapanese,
+                                    onSearch: { showsCourseOriginSearch = true },
+                                    onChangeDuration: { coursePlanner.setMinutes($0) }, onGenerate: generateCourses)
+                                WalkingCourseCard(planner: coursePlanner, theme: store.theme, japanese: courseIsJapanese,
+                                    onRetain: {
+                                        guard coursePlanner.retainSelectedCourse(japanese: courseIsJapanese) else { return }
+                                        // Saving returns to the ordinary map, even if planning began from a hidden-map mode.
+                                        previousCourseDisplayMode = nil
+                                        store.displayMode = .map
+                                        coursePlanner.close()
+                                    })
+                            }
+                        } else { bottomControls }
+                    }
+
+                    if !coursePlanner.isPresented, coursePlanner.retainedCourse != nil {
+                        VStack {
+                            Spacer()
+                            HStack {
+                                RetainedWalkingCourseControl(theme: store.theme, japanese: courseIsJapanese,
+                                    travelMode: coursePlanner.retainedCourse?.travelMode ?? .walking,
+                                    onFocus: coursePlanner.focusRetainedCourse,
+                                    onClear: { coursePlanner.clearRetainedCourse(japanese: courseIsJapanese) })
+                                Spacer()
+                            }
+                            .padding(.leading, 16).padding(.bottom, 170)
+                        }
                     }
 
                 }
@@ -162,6 +237,14 @@ struct MainMapView: View {
             SettingsView()
                 .environmentObject(store)
         }
+        .alert(courseText("コースの保存", "Saved course"), isPresented: Binding(
+            get: { coursePlanner.retentionError != nil },
+            set: { if !$0 { coursePlanner.retentionError = nil } }
+        )) {
+            Button("OK") { coursePlanner.retentionError = nil }
+        } message: {
+            Text(coursePlanner.retentionError ?? "")
+        }
         .onChange(of: store.showsWidgetRecordingSettings, initial: true) { _, shows in
             guard shows else { return }
             showsSettings = true
@@ -169,6 +252,8 @@ struct MainMapView: View {
         }
         .onChange(of: store.showsWidgetHome, initial: true) { _, shows in
             guard shows else { return }
+            coursePlanner.close()
+            showsCourseOriginSearch = false
             showsSettings = false
             sharePayload = nil
             datePickerTarget = nil
@@ -183,9 +268,30 @@ struct MainMapView: View {
         .sheet(item: $datePickerTarget) { target in
             RangeDatePickerSheet(target: target, store: store)
         }
+        .sheet(isPresented: $showsCourseOriginSearch) {
+            WalkingCourseOriginSearch(center: coursePlanner.origin ?? mapTargetLocation?.coordinate,
+                japanese: courseIsJapanese,
+                onCurrentLocation: {
+                    if let coordinate = mapTargetLocation?.coordinate {
+                        coursePlanner.setOrigin(coordinate, name: courseText("現在地", "Current location"))
+                    } else { store.refreshCurrentLocation() }
+                },
+                onSelect: { item in
+                    coursePlanner.setOrigin(item.placemark.coordinate, name: item.name ?? courseText("指定地点", "Selected point"))
+                })
+        }
+        .onChange(of: coursePlanner.isPresented) { _, presented in
+            if !presented, let previous = previousCourseDisplayMode {
+                store.displayMode = previous
+                previousCourseDisplayMode = nil
+            }
+        }
+        .onChange(of: store.latestLocation?.timestamp) { _, _ in
+            if coursePlanner.isPresented && coursePlanner.origin == nil, let coordinate = mapTargetLocation?.coordinate {
+                coursePlanner.setOrigin(coordinate, name: courseText("現在地", "Current location"))
+            }
+        }
         .onAppear {
-            // レビュー機能追加前にオンボーディングを完了した利用者も一度だけ対象にする。
-            ReviewRequestPolicy.markOnboardingCompleted()
             scheduleReviewIfNeeded()
 
             guard !hasRequestedInitialLocation else { return }
@@ -198,14 +304,19 @@ struct MainMapView: View {
             store.refreshCurrentLocation()
         }
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
+            guard phase == .active else {
+                reviewRequestTask?.cancel()
+                return
+            }
             // 移動後にアプリへ戻った場合は、古い座標を再利用せず新しい測位を待って中央へ戻す。
             store.refreshCurrentLocation()
             recenterToken += 1
+            scheduleReviewIfNeeded()
         }
         .onChange(of: store.reviewEligibleActiveDays) { _, _ in
             scheduleReviewIfNeeded()
         }
+        .onDisappear { reviewRequestTask?.cancel() }
     }
 
     /// Simulator previews use a deterministic Shinjuku location so screenshots
@@ -218,22 +329,39 @@ struct MainMapView: View {
         #endif
     }
 
+    private var courseIsJapanese: Bool { store.appLanguage.localeIdentifier.hasPrefix("ja") }
+    private func courseText(_ ja: String, _ en: String) -> String { courseIsJapanese ? ja : en }
+    private func generateCourses() {
+        coursePlanner.generate(tracks: store.tracks, japanese: courseIsJapanese)
+    }
+
     private var displayModeLabel: String {
-        switch store.displayMode {
-        case .map: "経路だけ"
-        case .routesOnly: "紙の地図"
-        case .excavation: "地図"
+        courseText("地図表示を切り替え：", "Change map mode: ") + mapModeName(store.displayMode)
+    }
+
+    private func mapModeName(_ mode: MapDisplayMode) -> String {
+        switch mode {
+        case .map: courseText("地図あり", "Full map")
+        case .excavation: courseText("周辺を隠す", "Reveal walked areas")
+        case .routesOnly: courseText("地図なし", "Routes only")
+        }
+    }
+
+    private func mapModeSymbol(_ mode: MapDisplayMode) -> String {
+        switch mode {
+        case .map: "map"
+        case .excavation: "square.3.layers.3d"
+        case .routesOnly: "point.bottomleft.forward.to.point.topright.scurvepath"
         }
     }
 
     private func cycleDisplayMode() {
         switch store.displayMode {
-        case .map: store.displayMode = .routesOnly
-        case .routesOnly: store.displayMode = .excavation
-        case .excavation:
-            sharesAfterRemix = false
-            store.displayMode = .map
+        case .map: store.displayMode = .excavation
+        case .excavation: store.displayMode = .routesOnly
+        case .routesOnly: store.displayMode = .map
         }
+        sharesAfterRemix = false
     }
 
     private var bottomControls: some View {
@@ -359,7 +487,7 @@ struct MainMapView: View {
 
     @MainActor
     private func scheduleReviewIfNeeded() {
-        guard scheduledReviewTrigger == nil,
+        guard scenePhase == .active, scheduledReviewTrigger == nil,
               let trigger = ReviewRequestPolicy.nextEligibleTrigger(
                 activeDays: store.reviewEligibleActiveDays
               ) else { return }
@@ -368,9 +496,17 @@ struct MainMapView: View {
         reviewRequestTask?.cancel()
         reviewRequestTask = Task { @MainActor in
             do {
-                // 画面遷移や経路描画と重ならないよう、メイン画面が落ち着いてから表示する。
-                try await Task.sleep(nanoseconds: 1_200_000_000)
+                // Give people time to view their recorded map, not a launch-time prompt.
+                try await Task.sleep(nanoseconds: 10_000_000_000)
             } catch {
+                scheduledReviewTrigger = nil
+                return
+            }
+            guard !Task.isCancelled, scenePhase == .active,
+                  !showsSettings, sharePayload == nil, datePickerTarget == nil,
+                  selectedPlace == nil, !coursePlanner.isPresented, !showsCourseOriginSearch,
+                  store.recorder.authorizationStatus != .notDetermined,
+                  ReviewRequestPolicy.nextEligibleTrigger(activeDays: store.reviewEligibleActiveDays) == trigger else {
                 scheduledReviewTrigger = nil
                 return
             }

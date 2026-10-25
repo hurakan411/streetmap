@@ -45,6 +45,16 @@ struct MapCanvasView: UIViewRepresentable {
     let onRemixSnapshotChanged: (RemixViewportSnapshot?) -> Void
     let mapSnapshotRequestToken: Int
     let onMapSnapshotReady: (UIImage?) -> Void
+    var planningCourse: WalkingCourse? = nil
+    var planningOrigin: CLLocationCoordinate2D? = nil
+    var isPlanningCourse = false
+    var planningTravelMode: CourseTravelMode = .walking
+    var courseCameraRevision = 0
+    var onCourseOriginSelected: ((CLLocationCoordinate2D) -> Void)? = nil
+    var courseDirection = WalkingCourseGeometry.Direction()
+    var courseDirectionRadius = 360.0
+    var courseDirectionJapanese = true
+    var onCourseDirectionChanged: ((Double, Double) -> Void)? = nil
 
     private var effectiveDisplayMode: MapDisplayMode {
         #if STREETPRINT_DIAGNOSTICS
@@ -79,6 +89,12 @@ struct MapCanvasView: UIViewRepresentable {
         tapRecognizer.cancelsTouchesInView = false
         tapRecognizer.delegate = context.coordinator
         mapView.addGestureRecognizer(tapRecognizer)
+        let longPress = UILongPressGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.didLongPressCourseOrigin(_:)))
+        longPress.minimumPressDuration = 0.65
+        longPress.cancelsTouchesInView = false
+        longPress.isEnabled = false
+        mapView.addGestureRecognizer(longPress)
+        context.coordinator.courseLongPress = longPress
         #if targetEnvironment(simulator)
         let initialCenter = CLLocationCoordinate2D(latitude: 35.6896, longitude: 139.7006)
         #else
@@ -248,6 +264,11 @@ struct MapCanvasView: UIViewRepresentable {
             context.coordinator.mapSnapshotRequestToken = mapSnapshotRequestToken
             context.coordinator.captureMapSnapshot(on: mapView)
         }
+        context.coordinator.updateCourse(planningCourse, origin: planningOrigin, active: isPlanningCourse,
+            revision: courseCameraRevision, travelMode: planningTravelMode, onOriginSelected: onCourseOriginSelected, on: mapView)
+        context.coordinator.updateCourseDirection(origin: planningOrigin, active: isPlanningCourse,
+            direction: courseDirection, radius: courseDirectionRadius, japanese: courseDirectionJapanese,
+            onChange: onCourseDirectionChanged, on: mapView)
     }
 
     private func configureMap(_ mapView: MKMapView, showsPointsOfInterest: Bool) {
@@ -286,7 +307,7 @@ struct MapCanvasView: UIViewRepresentable {
             // 通常表示では、期間コントロールと重ならない位置に置く。
             // 共有スナップショット時だけUI非表示時の余白へ切り替える。
             // 経路だけビューはApple地図を全面置換するため、下端の専用カバー内へ収める。
-            bottom: effectiveDisplayMode == .routesOnly ? 0 : (reservesBottomControlsSpace ? 108 : 4),
+            bottom: effectiveDisplayMode == .routesOnly ? 0 : (reservesBottomControlsSpace ? (isPlanningCourse ? 270 : 108) : 4),
             right: 7
         )
     }
@@ -356,9 +377,149 @@ struct MapCanvasView: UIViewRepresentable {
         private var shouldSuppressMapTap = false
         private var selectedPlaceRequestToken = UUID()
         private var selectedPlaceRequest: MKMapItemRequest?
+        private var selectedCoursePlaceSearch: MKLocalSearch?
         private weak var placeDetailController: UIViewController?
         private weak var placeDetailMapView: MKMapView?
         private var pendingMapTap: DispatchWorkItem?
+        weak var courseLongPress: UILongPressGestureRecognizer?
+        private var courseID: UUID?
+        private var courseLine: WalkingCoursePolyline?
+        private var courseAnnotations: [WalkingCourseAnnotation] = []
+        private var courseOrigin: CLLocationCoordinate2D?
+        private var courseRevision = -1
+        private var isPlanningCourse = false
+        private var courseTravelMode: CourseTravelMode = .walking
+        private var onCourseOriginSelected: ((CLLocationCoordinate2D) -> Void)?
+        private var courseDirectionControl: WalkingCourseDirectionView?
+        private var displayedDirectionRadius: Double?
+        private var displayedDirectionOrigin: CLLocationCoordinate2D?
+
+        func updateCourseDirection(origin: CLLocationCoordinate2D?, active: Bool,
+                                   direction: WalkingCourseGeometry.Direction, radius: Double, japanese: Bool,
+                                   onChange: ((Double, Double) -> Void)?, on map: MKMapView) {
+            guard active, let origin else {
+                courseDirectionControl?.removeFromSuperview(); courseDirectionControl = nil
+                displayedDirectionRadius = nil
+                displayedDirectionOrigin = nil
+                return
+            }
+            let radiusChanged = displayedDirectionRadius != radius
+                || displayedDirectionOrigin?.latitude != origin.latitude || displayedDirectionOrigin?.longitude != origin.longitude
+            displayedDirectionRadius = radius
+            displayedDirectionOrigin = origin
+            if radiusChanged, radius.isFinite, radius > 0 {
+                let center = MKMapPoint(origin)
+                let points = radius / MKMetersPerMapPointAtLatitude(origin.latitude)
+                let circleBounds = MKMapRect(x: center.x - points, y: center.y - points, width: points * 2, height: points * 2)
+                let padding = UIEdgeInsets(top: max(60, map.safeAreaInsets.top + 16), left: 32, bottom: 40, right: 32)
+                let fit = map.mapRectThatFits(circleBounds, edgePadding: padding)
+                // Keep the current zoom when the larger circle already fits.
+                // Only a condition change can reframe it, never an ordinary pan.
+                if map.visibleMapRect.width < fit.width || map.visibleMapRect.height < fit.height {
+                    map.setVisibleMapRect(circleBounds, edgePadding: padding, animated: true)
+                }
+            }
+            if courseDirectionControl == nil {
+                let control = WalkingCourseDirectionView(map: map)
+                courseDirectionControl = control
+                map.addSubview(control)
+            }
+            courseDirectionControl?.configure(origin: origin, direction: direction, radiusMeters: radius,
+                dark: theme.prefersDarkMap, japanese: japanese, onChange: onChange)
+            if let control = courseDirectionControl { map.bringSubviewToFront(control) }
+        }
+
+        @objc func didLongPressCourseOrigin(_ recognizer: UILongPressGestureRecognizer) {
+            guard recognizer.state == .began, let map = recognizer.view as? MKMapView, isPlanningCourse else { return }
+            pendingMapTap?.cancel(); pendingMapTap = nil
+            let coordinate = map.convert(recognizer.location(in: map), toCoordinateFrom: map)
+            if CLLocationCoordinate2DIsValid(coordinate) { onCourseOriginSelected?(coordinate) }
+        }
+
+        func updateCourse(_ course: WalkingCourse?, origin: CLLocationCoordinate2D?, active: Bool, revision: Int, travelMode: CourseTravelMode,
+                          onOriginSelected: ((CLLocationCoordinate2D) -> Void)?, on map: MKMapView) {
+            onCourseOriginSelected = onOriginSelected
+            courseLongPress?.isEnabled = active
+            let activeChanged = isPlanningCourse != active
+            let travelModeChanged = courseTravelMode != travelMode
+            courseTravelMode = travelMode
+            isPlanningCourse = active
+            let selectable: MKMapFeatureOptions = active ? [] : (configuredPOI == true ? [.pointsOfInterest] : [])
+            if map.selectableMapFeatures != selectable { map.selectableMapFeatures = selectable }
+            let originChanged = courseOrigin?.latitude != origin?.latitude || courseOrigin?.longitude != origin?.longitude
+            let lineMissing = courseLine.map { line in !map.overlays.contains(where: { $0 === line }) } ?? false
+            let courseChanged = courseID != course?.id
+            let revisionChanged = revision != courseRevision
+            // A newly inserted background/mask must not cover the saved course.
+            // This touches only the single proposal overlay, never the history renderer.
+            ensureCourseForeground(on: map)
+            guard courseChanged || originChanged || activeChanged || revisionChanged || lineMissing || travelModeChanged else { return }
+            courseID = course?.id; courseOrigin = origin; courseRevision = revision
+            if let course {
+                if courseChanged || lineMissing {
+                    if let courseLine { map.removeOverlay(courseLine) }
+                    map.removeAnnotations(courseAnnotations)
+                    var coordinates = course.coordinates
+                    let line = WalkingCoursePolyline(coordinates: &coordinates, count: coordinates.count)
+                    courseLine = line
+                    map.addOverlay(line, level: .aboveLabels)
+                    courseAnnotations = course.stops.map {
+                        WalkingCourseAnnotation(coordinate: $0.coordinate, title: $0.name, symbol: $0.symbol)
+                    }
+                    if let start = course.coordinates.first {
+                        courseAnnotations.append(WalkingCourseAnnotation(coordinate: start, title: nil, symbol: course.travelMode.symbol))
+                    }
+                    map.addAnnotations(courseAnnotations)
+                }
+                if (courseChanged || revisionChanged), let line = courseLine {
+                    map.setVisibleMapRect(line.boundingMapRect,
+                        // Planning already reserves 270pt through layoutMargins
+                        // for its cards/legal attribution. Do not reserve it twice.
+                        edgePadding: UIEdgeInsets(top: active ? max(60, map.safeAreaInsets.top + 16) : 145,
+                            left: active ? 18 : 28, bottom: active ? 40 : 215,
+                            right: active ? 18 : 90), animated: true)
+                }
+            } else {
+                if let courseLine { map.removeOverlay(courseLine) }
+                map.removeAnnotations(courseAnnotations)
+                courseLine = nil; courseAnnotations = []
+                guard active, let origin else { return }
+                courseAnnotations = [WalkingCourseAnnotation(coordinate: origin, title: nil, symbol: travelMode.symbol)]
+                map.addAnnotations(courseAnnotations)
+                if originChanged || activeChanged {
+                    map.setRegion(MKCoordinateRegion(center: origin, latitudinalMeters: 900, longitudinalMeters: 900), animated: true)
+                }
+            }
+        }
+
+        private func courseAnnotationView(_ mapView: MKMapView, annotation: MKAnnotation) -> MKAnnotationView? {
+            guard let annotation = annotation as? WalkingCourseAnnotation else { return nil }
+            let view = (mapView.dequeueReusableAnnotationView(withIdentifier: "walking-course") as? MKMarkerAnnotationView)
+                ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "walking-course")
+            view.annotation = annotation
+            view.markerTintColor = WalkingCourseStyle.uiAccent
+            view.glyphImage = UIImage(systemName: annotation.symbol)
+            view.displayPriority = .required
+            view.titleVisibility = .adaptive
+            // The start marker is only an indicator, not a selectable place.
+            view.isEnabled = annotation.title?.isEmpty == false
+            return view
+        }
+
+        /// Asynchronous history preparation can register a new surface AFTER
+        /// updateCourse returns. Keep the proposal in front without removing
+        /// it or restarting either route's renderer/animation.
+        private func ensureCourseForeground(on map: MKMapView) {
+            guard let line = courseLine else { return }
+            let overlays = map.overlays(in: .aboveLabels)
+            guard let index = overlays.firstIndex(where: { $0 === line }), index + 1 < overlays.count else { return }
+            // Adjacent swaps preserve the relative order of masks/history/live.
+            for next in overlays.dropFirst(index + 1) { map.exchangeOverlay(line, with: next) }
+        }
+
+        func mapView(_ mapView: MKMapView, didAdd renderers: [MKOverlayRenderer]) {
+            ensureCourseForeground(on: mapView)
+        }
 
         init(
             onMapTap: @escaping () -> Void,
@@ -378,7 +539,8 @@ struct MapCanvasView: UIViewRepresentable {
             pendingMapTap?.cancel()
             let action = DispatchWorkItem { [weak self] in
                 guard let self else { return }
-                guard !shouldSuppressMapTap, placeDetailController == nil else { return }
+                guard !shouldSuppressMapTap, placeDetailController == nil,
+                      selectedPlaceRequest == nil, selectedCoursePlaceSearch == nil else { return }
                 onMapTap()
             }
             pendingMapTap = action
@@ -389,6 +551,12 @@ struct MapCanvasView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, didSelect annotation: any MKAnnotation) {
+            if let stop = annotation as? WalkingCourseAnnotation, let name = stop.title, !name.isEmpty {
+                pendingMapTap?.cancel(); pendingMapTap = nil
+                suppressMapTapForPlaceSelection()
+                presentCourseStopDetails(stop, name: name, on: mapView)
+                return
+            }
             guard let feature = annotation as? MKMapFeatureAnnotation,
                   feature.featureType == .pointOfInterest else { return }
             pendingMapTap?.cancel()
@@ -465,6 +633,57 @@ struct MapCanvasView: UIViewRepresentable {
             }
         }
 
+        /// Course pins are app annotations, not MKMapFeatureAnnotation. Resolve
+        /// the same named nearby place, then use the existing compact detail UI.
+        /// Saved proposals never need to be removed to inspect their stops.
+        private func presentCourseStopDetails(_ stop: WalkingCourseAnnotation, name: String, on mapView: MKMapView) {
+            selectedPlaceRequest?.cancel(); selectedPlaceRequest = nil
+            selectedCoursePlaceSearch?.cancel()
+            let token = UUID()
+            selectedPlaceRequestToken = token
+            let request = MKLocalSearch.Request()
+            request.naturalLanguageQuery = name
+            request.region = MKCoordinateRegion(center: stop.coordinate, latitudinalMeters: 240, longitudinalMeters: 240)
+            request.resultTypes = .pointOfInterest
+            let search = MKLocalSearch(request: request)
+            selectedCoursePlaceSearch = search
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self, weak search] in
+                guard self?.selectedPlaceRequestToken == token else { return }
+                search?.cancel()
+            }
+            search.start { [weak self, weak mapView] response, _ in
+                DispatchQueue.main.async {
+                    guard let self, let mapView, self.selectedPlaceRequestToken == token else { return }
+                    self.selectedCoursePlaceSearch = nil
+                    func normalized(_ value: String) -> String {
+                        value.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+                            .filter { !$0.isWhitespace }
+                    }
+                    let item = response?.mapItems.first {
+                        normalized($0.name ?? "") == normalized(name)
+                            && WalkingCourseEngine.distance($0.placemark.coordinate, stop.coordinate) <= 80
+                    }
+                    if #available(iOS 18.0, *), let item, let presenter = self.placePresenter(on: mapView),
+                       presenter.presentedViewController == nil {
+                        self.showPlaceDetails(item, from: presenter, on: mapView)
+                    } else {
+                        self.onPlaceSelected(MapPlaceDetails(id: "course-stop|\(name)|\(stop.coordinate.latitude)|\(stop.coordinate.longitude)",
+                            name: name, address: item?.placemark.title, phoneNumber: item?.phoneNumber,
+                            website: item?.url, coordinate: stop.coordinate, isLoading: false))
+                    }
+                }
+            }
+        }
+
+        private func placePresenter(on mapView: MKMapView) -> UIViewController? {
+            var responder: UIResponder? = mapView
+            while let current = responder {
+                if let controller = current as? UIViewController { return controller }
+                responder = current.next
+            }
+            return nil
+        }
+
         @available(iOS 18.0, *)
         func mapView(_ mapView: MKMapView, selectionAccessoryFor annotation: any MKAnnotation) -> MKSelectionAccessory? {
             // Present the detail controller ourselves so MapKit cannot select
@@ -486,6 +705,7 @@ struct MapCanvasView: UIViewRepresentable {
             guard let presenter, presenter.presentedViewController == nil else { return }
 
             selectedPlaceRequest?.cancel()
+            selectedCoursePlaceSearch?.cancel(); selectedCoursePlaceSearch = nil
             let requestToken = UUID()
             selectedPlaceRequestToken = requestToken
             // Resolve the exact tapped POI before presenting the rich card,
@@ -543,11 +763,12 @@ struct MapCanvasView: UIViewRepresentable {
             selectedPlaceRequestToken = UUID()
             selectedPlaceRequest?.cancel()
             selectedPlaceRequest = nil
+            selectedCoursePlaceSearch?.cancel(); selectedCoursePlaceSearch = nil
             placeDetailController = nil
             let mapView = placeDetailMapView
             placeDetailMapView = nil
             let finish = {
-                mapView?.selectedAnnotations.compactMap { $0 as? MKMapFeatureAnnotation }.forEach {
+                mapView?.selectedAnnotations.filter { $0 is MKMapFeatureAnnotation || $0 is WalkingCourseAnnotation }.forEach {
                     mapView?.deselectAnnotation($0, animated: false)
                 }
                 completion?()
@@ -571,11 +792,12 @@ struct MapCanvasView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, didDeselect annotation: any MKAnnotation) {
-            guard annotation is MKMapFeatureAnnotation else { return }
+            guard annotation is MKMapFeatureAnnotation || annotation is WalkingCourseAnnotation else { return }
             guard placeDetailController == nil else { return }
             selectedPlaceRequestToken = UUID()
             selectedPlaceRequest?.cancel()
             selectedPlaceRequest = nil
+            selectedCoursePlaceSearch?.cancel(); selectedCoursePlaceSearch = nil
             onPlaceSelected(nil)
         }
 
@@ -652,6 +874,7 @@ struct MapCanvasView: UIViewRepresentable {
             let timing = MapPerformanceProbe.begin("main.regionDidChange")
             defer { MapPerformanceProbe.end(timing) }
             updateExcavationScale(on: mapView, settled: true)
+            courseDirectionControl?.refresh()
             if remixOverlay == nil {
                 publishPlainViewportSnapshotIfPossible(on: mapView)
             } else {
@@ -663,6 +886,7 @@ struct MapCanvasView: UIViewRepresentable {
             let timing = MapPerformanceProbe.begin("main.visibleRegionChanged")
             defer { MapPerformanceProbe.end(timing) }
             updateExcavationScale(on: mapView)
+            courseDirectionControl?.refresh()
         }
 
         private func updateExcavationScale(on mapView: MKMapView, settled: Bool = false) {
@@ -677,6 +901,7 @@ struct MapCanvasView: UIViewRepresentable {
         // MapKitの標準ユーザー位置ビューは、精度サークル（白い輪）を
         // 表示することがあるため、アプリの小さな現在地ドットに置き換える。
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if annotation is WalkingCourseAnnotation { return courseAnnotationView(mapView, annotation: annotation) }
             guard annotation is MKUserLocation else { return nil }
             let reuseIdentifier = "MichiUserLocation"
             let view = (mapView.dequeueReusableAnnotationView(withIdentifier: reuseIdentifier)
@@ -1246,6 +1471,7 @@ struct MapCanvasView: UIViewRepresentable {
                 candidate is PersistentRouteOverlay || candidate is LivePolyline
             }) ?? overlays.count
             mapView.insertOverlay(overlay, at: routeIndex, level: .aboveLabels)
+            ensureCourseForeground(on: mapView)
         }
 
         func updateRoutesIncrementally(
@@ -1363,6 +1589,7 @@ struct MapCanvasView: UIViewRepresentable {
             routeSurface = surface
             mapView.addOverlay(surface, level: .aboveLabels)
             if let old { mapView.removeOverlay(old) }
+            ensureCourseForeground(on: mapView)
         }
 
         private func publishStatsTarget(_ stats: WalkStats) {
@@ -1477,11 +1704,13 @@ struct MapCanvasView: UIViewRepresentable {
                 line.transportMode = group.mode
                 mapView.addOverlay(line, level: .aboveLabels)
             }
+            ensureCourseForeground(on: mapView)
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             let timing = MapPerformanceProbe.begin("main.createOverlayRenderer")
             defer { MapPerformanceProbe.end(timing) }
+            if let course = overlay as? WalkingCoursePolyline { return WalkingCourseRenderer(line: course) }
             if let tile = overlay as? BackgroundTileOverlay {
                 return MKTileOverlayRenderer(tileOverlay: tile)
             }
@@ -1601,6 +1830,36 @@ private final class MichiMapView: MKMapView {
         if showsRouteOnlyAttributionCover {
             bringSubviewToFront(routeOnlyAttributionCover)
         }
+    }
+}
+
+private final class WalkingCourseAnnotation: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D
+    let title: String?
+    let symbol: String
+    init(coordinate: CLLocationCoordinate2D, title: String?, symbol: String) {
+        self.coordinate = coordinate; self.title = title; self.symbol = symbol
+    }
+}
+
+private final class WalkingCoursePolyline: MKPolyline {}
+
+private final class WalkingCourseRenderer: MKOverlayRenderer {
+    private let line: WalkingCoursePolyline
+    private let color = WalkingCourseStyle.uiAccent.cgColor
+    init(line: WalkingCoursePolyline) { self.line = line; super.init(overlay: line) }
+    override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
+        guard zoomScale.isFinite, zoomScale > 0, line.pointCount > 1 else { return }
+        context.saveGState(); defer { context.restoreGState() }
+        context.clip(to: rect(for: mapRect))
+        let path = CGMutablePath()
+        path.move(to: point(for: line.points()[0]))
+        for index in 1..<line.pointCount { path.addLine(to: point(for: line.points()[index])) }
+        context.setLineCap(.round); context.setLineJoin(.round)
+        context.setStrokeColor(UIColor.white.withAlphaComponent(0.9).cgColor)
+        context.setLineWidth(6 / zoomScale); context.addPath(path); context.strokePath()
+        context.setStrokeColor(color)
+        context.setLineWidth(3.5 / zoomScale); context.addPath(path); context.strokePath()
     }
 }
 
